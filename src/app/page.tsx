@@ -1,26 +1,22 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
-import { minutesToTimeLabel } from "@/lib/time";
+import { minutesToHHMM } from "@/lib/time";
 import BookingFlow, { type Service } from "@/components/booking/BookingFlow";
 
 export const dynamic = "force-dynamic";
 
 const WEEKDAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
+  "Sonntag",
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
 ];
 // Display order: Monday-first, Sunday last.
 const DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
-
-function money(cents: number): string {
-  return `$${(cents / 100).toFixed(0)}`;
-}
 
 export default async function Home() {
   const [serviceRows, hours] = await Promise.all([
@@ -39,121 +35,82 @@ export default async function Home() {
   ]);
 
   const services: Service[] = serviceRows;
-  const openWeekdays = hours.filter((h) => !h.isClosed).map((h) => h.dayOfWeek);
   const hoursByDay = new Map(hours.map((h) => [h.dayOfWeek, h]));
 
   return (
     <>
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-line/70 bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
-          <span className="text-lg font-semibold tracking-tight">
-            {siteConfig.name}
+      {/* Hero */}
+      <section className="relative overflow-hidden bg-gradient-to-b from-zinc-900 via-zinc-800 to-zinc-700 text-white">
+        {/* Logo backdrop. Drop a real logo at /public/logo.png to replace this. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 flex items-center justify-center select-none"
+        >
+          <span className="text-[18vw] font-black tracking-[0.15em] text-red-900/30 sm:text-[12rem]">
+            ✂
           </span>
+        </div>
+
+        <div className="relative mx-auto flex max-w-3xl flex-col items-center px-5 py-24 text-center sm:py-32">
+          <h1 className="text-4xl font-bold tracking-tight drop-shadow sm:text-6xl">
+            {siteConfig.name}
+          </h1>
+          <p className="mt-5 max-w-xl text-base text-zinc-200 sm:text-lg">
+            {siteConfig.tagline}
+          </p>
           <Link
             href="#book"
-            className="rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background"
+            className="mt-9 rounded-full bg-emerald-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg transition-colors hover:bg-emerald-700"
           >
-            Book now
+            Service auswählen
           </Link>
+
+          <div
+            aria-hidden
+            className="mt-16 text-3xl font-black tracking-[0.35em] text-red-800/70 sm:text-5xl"
+          >
+            KOURESH_CUTS
+            <div className="mt-1 text-xs font-bold tracking-[0.5em] text-zinc-400">
+              BARBER
+            </div>
+          </div>
         </div>
-      </header>
+      </section>
 
+      {/* Booking (services + flow) */}
       <main className="flex-1">
-        {/* Hero */}
-        <section className="mx-auto max-w-5xl px-5 pt-20 pb-16 text-center sm:pt-28">
-          <p className="text-sm font-medium uppercase tracking-widest text-muted">
-            Barbershop · Book online
-          </p>
-          <h1 className="mx-auto mt-4 max-w-2xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">
-            {siteConfig.tagline}
-          </h1>
-          <p className="mx-auto mt-5 max-w-md text-base text-muted">
-            {siteConfig.description}
-          </p>
-          <div className="mt-8 flex items-center justify-center gap-3">
-            <Link
-              href="#book"
-              className="rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-background"
-            >
-              Book an appointment
-            </Link>
-            <Link
-              href="#services"
-              className="rounded-full border border-line px-6 py-3 text-sm font-medium hover:border-foreground"
-            >
-              View services
-            </Link>
-          </div>
-        </section>
-
-        {/* Services */}
-        <section id="services" className="mx-auto max-w-5xl px-5 py-12">
-          <h2 className="text-center text-2xl font-semibold tracking-tight">
-            Services
-          </h2>
-          <ul className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-2">
-            {services.map((s) => (
-              <li
-                key={s.id}
-                className="flex items-start justify-between rounded-2xl border border-line bg-surface p-5"
-              >
-                <div>
-                  <p className="font-medium">{s.name}</p>
-                  <p className="mt-1 text-sm text-muted">{s.description}</p>
-                  <p className="mt-2 text-xs text-muted">{s.durationMinutes} min</p>
-                </div>
-                <span className="ml-4 shrink-0 text-lg font-semibold">
-                  {money(s.priceCents)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        {/* Booking */}
-        <section id="book" className="mx-auto max-w-5xl scroll-mt-20 px-5 py-16">
-          <h2 className="text-center text-2xl font-semibold tracking-tight">
-            Book your appointment
-          </h2>
-          <p className="mt-2 text-center text-sm text-muted">
-            Pick a service, choose a time, done in under a minute.
-          </p>
-          <div className="mt-10">
-            {services.length === 0 ? (
-              <p className="text-center text-sm text-muted">
-                No services available yet. Please check back soon.
-              </p>
-            ) : (
-              <BookingFlow services={services} openWeekdays={openWeekdays} />
-            )}
-          </div>
+        <section id="book" className="mx-auto max-w-5xl scroll-mt-6 px-5 py-16">
+          {services.length === 0 ? (
+            <p className="text-center text-sm text-muted">
+              Aktuell sind keine Services verfügbar. Bitte später erneut versuchen.
+            </p>
+          ) : (
+            <BookingFlow services={services} />
+          )}
         </section>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-line bg-surface">
+      <footer className="border-t border-line bg-background">
         <div className="mx-auto grid max-w-5xl gap-10 px-5 py-14 sm:grid-cols-3">
           <div>
-            <p className="text-lg font-semibold tracking-tight">
-              {siteConfig.name}
-            </p>
+            <p className="text-lg font-bold tracking-tight">{siteConfig.name}</p>
             <p className="mt-2 max-w-xs text-sm text-muted">
               {siteConfig.description}
             </p>
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold">Hours</h3>
+            <h3 className="text-sm font-semibold">Öffnungszeiten</h3>
             <ul className="mt-3 space-y-1 text-sm text-muted">
               {DISPLAY_ORDER.map((dow) => {
                 const h = hoursByDay.get(dow);
                 const label =
                   !h || h.isClosed
-                    ? "Closed"
-                    : `${minutesToTimeLabel(h.openMinute)} – ${minutesToTimeLabel(
+                    ? "Geschlossen"
+                    : `${minutesToHHMM(h.openMinute)} – ${minutesToHHMM(
                         h.closeMinute,
-                      )}`;
+                      )} Uhr`;
                 return (
                   <li key={dow} className="flex justify-between gap-6">
                     <span>{WEEKDAY_NAMES[dow]}</span>
@@ -165,20 +122,15 @@ export default async function Home() {
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold">Visit & contact</h3>
+            <h3 className="text-sm font-semibold">Kontakt</h3>
             <ul className="mt-3 space-y-1 text-sm text-muted">
               <li>{siteConfig.address}</li>
               <li>
-                <a className="hover:text-foreground" href={`tel:${siteConfig.phone}`}>
-                  {siteConfig.phone}
-                </a>
-              </li>
-              <li>
                 <a
                   className="hover:text-foreground"
-                  href={`mailto:${siteConfig.email}`}
+                  href={`tel:${siteConfig.phone}`}
                 >
-                  {siteConfig.email}
+                  {siteConfig.phone}
                 </a>
               </li>
             </ul>
@@ -217,7 +169,7 @@ export default async function Home() {
           </div>
         </div>
         <div className="border-t border-line py-5 text-center text-xs text-muted">
-          © {new Date().getFullYear()} {siteConfig.name}. All rights reserved.
+          © {new Date().getFullYear()} {siteConfig.name}. Alle Rechte vorbehalten.
         </div>
       </footer>
     </>

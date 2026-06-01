@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
 
   const gcalUrl = googleCalendarUrl({
     title: `${service.name} — ${siteConfig.name}`,
-    description: `Your ${service.name} appointment at ${siteConfig.name}. Payment in shop.`,
+    description: `Dein Termin (${service.name}) bei ${siteConfig.name}. Zahlung vor Ort.`,
     location: siteConfig.address,
     start,
     end,

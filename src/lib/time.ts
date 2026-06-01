@@ -1,6 +1,10 @@
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
+import { de } from "date-fns/locale";
 
 // Time helpers for working in the shop's local timezone while storing UTC.
+// All human-facing labels use the German (de) locale to match the site.
+
+const LOCALE = { locale: de };
 
 export function pad2(n: number): string {
   return n.toString().padStart(2, "0");
@@ -14,15 +18,6 @@ export function weekdayOf(dateStr: string): number {
 /** Minutes-from-midnight -> "HH:MM" (24h). */
 export function minutesToHHMM(minutes: number): string {
   return `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
-}
-
-/** Minutes-from-midnight -> "9:00 AM" (12h). */
-export function minutesToTimeLabel(minutes: number): string {
-  const h24 = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  const period = h24 >= 12 ? "PM" : "AM";
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return `${h12}:${pad2(m)} ${period}`;
 }
 
 /**
@@ -41,19 +36,24 @@ export function isValidDateStr(dateStr: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === dateStr;
 }
 
-/** Format an absolute instant as a time label in the shop timezone, e.g. "9:30 AM". */
+/** Time label in the shop timezone, e.g. "14:00 Uhr". */
 export function formatTimeLabel(date: Date, tz: string): string {
-  return formatInTimeZone(date, tz, "h:mm a");
+  return formatInTimeZone(date, tz, "HH:mm 'Uhr'", LOCALE);
 }
 
-/** Format an absolute instant as a full, human label in the shop timezone. */
+/** Compact clock in the shop timezone, e.g. "14:00". */
+export function formatClock(date: Date, tz: string): string {
+  return formatInTimeZone(date, tz, "HH:mm", LOCALE);
+}
+
+/** Full date+time label, e.g. "Mi., 20.05.2026 • 14:00 Uhr". */
 export function formatDateTimeLabel(date: Date, tz: string): string {
-  return formatInTimeZone(date, tz, "EEEE, MMMM d, yyyy 'at' h:mm a");
+  return formatInTimeZone(date, tz, "EE, dd.MM.yyyy '•' HH:mm 'Uhr'", LOCALE);
 }
 
-/** Format an absolute instant as a date label in the shop timezone, e.g. "Mon, Jun 1". */
+/** Date label, e.g. "Mi., 20.05.2026". */
 export function formatDateLabel(date: Date, tz: string): string {
-  return formatInTimeZone(date, tz, "EEE, MMM d, yyyy");
+  return formatInTimeZone(date, tz, "EE, dd.MM.yyyy", LOCALE);
 }
 
 /** Today's calendar date ("YYYY-MM-DD") in the shop timezone. */
@@ -68,12 +68,31 @@ export function addDaysToDateStr(dateStr: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Short weekday + day label for a calendar date, e.g. "Mon 2". */
-export function dayChipLabel(dateStr: string): { weekday: string; day: string; month: string } {
-  const d = new Date(`${dateStr}T12:00:00Z`);
-  return {
-    weekday: formatInTimeZone(d, "UTC", "EEE"),
-    day: formatInTimeZone(d, "UTC", "d"),
-    month: formatInTimeZone(d, "UTC", "MMM"),
-  };
+/** Build "YYYY-MM-DD" from year, 0-based month, day. */
+export function toDateStr(year: number, month0: number, day: number): string {
+  return `${year}-${pad2(month0 + 1)}-${pad2(day)}`;
+}
+
+/** Number of days in a given month (month0 is 0-based). */
+export function daysInMonth(year: number, month0: number): number {
+  return new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate();
+}
+
+/**
+ * Monday-first weekday index (0 = Monday … 6 = Sunday) of the 1st of a month.
+ * Used to compute the leading blank cells of a calendar grid.
+ */
+export function firstWeekdayMondayFirst(year: number, month0: number): number {
+  const sundayFirst = new Date(Date.UTC(year, month0, 1)).getUTCDay();
+  return (sundayFirst + 6) % 7;
+}
+
+/** German month + year label, e.g. "Mai 2026". */
+export function monthLabel(year: number, month0: number): string {
+  return formatInTimeZone(
+    new Date(Date.UTC(year, month0, 1, 12)),
+    "UTC",
+    "MMMM yyyy",
+    LOCALE,
+  );
 }

@@ -42,8 +42,15 @@ type Data = {
 };
 
 const tz = siteConfig.timezone;
-const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_NAMES = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 const DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+const STATUS_LABEL: Record<string, string> = {
+  CONFIRMED: "bestätigt",
+  PENDING: "offen",
+  CANCELLED: "storniert",
+  COMPLETED: "erledigt",
+};
 
 function hhmmToMinutes(value: string): number {
   const [h, m] = value.split(":").map(Number);
@@ -81,24 +88,24 @@ export default function AdminDashboard({ data }: { data: Data }) {
     <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-10">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">
-          {siteConfig.name} admin
+          {siteConfig.name} · Admin
         </h1>
         <button
           onClick={logout}
           className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
         >
-          Sign out
+          Abmelden
         </button>
       </div>
 
-      <div className="mt-6 inline-flex rounded-full border border-line p-1 text-sm">
+      <div className="mt-6 inline-flex rounded-full border border-line bg-background p-1 text-sm">
         <button
           onClick={() => setTab("appointments")}
           className={`rounded-full px-4 py-1.5 ${
             tab === "appointments" ? "bg-foreground text-background" : "text-muted"
           }`}
         >
-          Appointments
+          Termine
         </button>
         <button
           onClick={() => setTab("availability")}
@@ -106,7 +113,7 @@ export default function AdminDashboard({ data }: { data: Data }) {
             tab === "availability" ? "bg-foreground text-background" : "text-muted"
           }`}
         >
-          Availability
+          Verfügbarkeit
         </button>
       </div>
 
@@ -151,7 +158,9 @@ function Appointments({
 
   if (appointments.length === 0) {
     return (
-      <p className="mt-8 text-sm text-muted">No upcoming appointments yet.</p>
+      <p className="mt-8 text-sm text-muted">
+        Noch keine bevorstehenden Termine.
+      </p>
     );
   }
 
@@ -160,7 +169,7 @@ function Appointments({
       {appointments.map((a) => (
         <li
           key={a.id}
-          className="rounded-2xl border border-line bg-surface p-4 sm:p-5"
+          className="rounded-2xl border border-line bg-background p-4 shadow-sm sm:p-5"
         >
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -171,24 +180,29 @@ function Appointments({
                     a.status,
                   )}`}
                 >
-                  {a.status.toLowerCase()}
+                  {STATUS_LABEL[a.status] ?? a.status.toLowerCase()}
                 </span>
               </p>
               <p className="mt-1 text-sm text-muted">
                 {formatDateTimeLabel(new Date(a.start), tz)}
               </p>
               <p className="mt-2 text-sm">
-                {a.customerName} ·{" "}
-                <a className="underline" href={`tel:${a.customerPhone}`}>
-                  {a.customerPhone}
-                </a>{" "}
-                ·{" "}
+                {a.customerName}
+                {a.customerPhone && (
+                  <>
+                    {" · "}
+                    <a className="underline" href={`tel:${a.customerPhone}`}>
+                      {a.customerPhone}
+                    </a>
+                  </>
+                )}
+                {" · "}
                 <a className="underline" href={`mailto:${a.customerEmail}`}>
                   {a.customerEmail}
                 </a>
               </p>
               {a.notes && (
-                <p className="mt-1 text-sm text-muted">Note: {a.notes}</p>
+                <p className="mt-1 text-sm text-muted">Notiz: {a.notes}</p>
               )}
             </div>
           </div>
@@ -200,7 +214,7 @@ function Appointments({
                 onClick={() => setStatus(a.id, "CANCELLED")}
                 className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-red-400 hover:text-red-600 disabled:opacity-50"
               >
-                Cancel
+                Stornieren
               </button>
             )}
             {a.status !== "COMPLETED" && a.status !== "CANCELLED" && (
@@ -209,7 +223,7 @@ function Appointments({
                 onClick={() => setStatus(a.id, "COMPLETED")}
                 className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-foreground disabled:opacity-50"
               >
-                Mark complete
+                Erledigt
               </button>
             )}
             {a.status === "CANCELLED" && (
@@ -218,7 +232,7 @@ function Appointments({
                 onClick={() => setStatus(a.id, "CONFIRMED")}
                 className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-foreground disabled:opacity-50"
               >
-                Restore
+                Wiederherstellen
               </button>
             )}
           </div>
@@ -243,8 +257,8 @@ function Availability({
         hours.find((h) => h.dayOfWeek === dow) ?? {
           dayOfWeek: dow,
           isClosed: true,
-          openMinute: 540,
-          closeMinute: 1020,
+          openMinute: 600,
+          closeMinute: 1140,
         },
     ),
   );
@@ -270,11 +284,12 @@ function Availability({
       const res = await fetch("/api/admin/hours", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        // API expects all 7 days; order doesn't matter.
         body: JSON.stringify({ hours: draft }),
       });
       const d = await res.json().catch(() => ({}));
-      setHoursMsg(res.ok ? "Saved." : d.error ?? "Could not save.");
+      setHoursMsg(
+        res.ok ? "Gespeichert." : d.error ?? "Konnte nicht gespeichert werden.",
+      );
       if (res.ok) onChange();
     } finally {
       setSavingHours(false);
@@ -293,7 +308,7 @@ function Availability({
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setOffError(d.error ?? "Could not add.");
+        setOffError(d.error ?? "Konnte nicht hinzugefügt werden.");
         return;
       }
       setStart("");
@@ -313,8 +328,8 @@ function Availability({
   return (
     <div className="mt-6 flex flex-col gap-8">
       {/* Weekly hours */}
-      <section className="rounded-2xl border border-line bg-surface p-5">
-        <h2 className="text-sm font-semibold">Weekly hours</h2>
+      <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+        <h2 className="text-sm font-semibold">Öffnungszeiten</h2>
         <div className="mt-4 flex flex-col gap-2">
           {draft.map((d) => (
             <div
@@ -332,7 +347,7 @@ function Availability({
                     updateDay(d.dayOfWeek, { isClosed: !e.target.checked })
                   }
                 />
-                Open
+                Geöffnet
               </label>
               <input
                 type="time"
@@ -366,22 +381,22 @@ function Availability({
             disabled={savingHours}
             className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
           >
-            {savingHours ? "Saving…" : "Save hours"}
+            {savingHours ? "Speichern…" : "Zeiten speichern"}
           </button>
           {hoursMsg && <span className="text-sm text-muted">{hoursMsg}</span>}
         </div>
       </section>
 
       {/* Time off */}
-      <section className="rounded-2xl border border-line bg-surface p-5">
-        <h2 className="text-sm font-semibold">Days off / vacation</h2>
+      <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+        <h2 className="text-sm font-semibold">Freie Tage / Urlaub</h2>
 
         {timeOff.length > 0 && (
           <ul className="mt-4 flex flex-col gap-2">
             {timeOff.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center justify-between rounded-lg border border-line bg-background px-3 py-2 text-sm"
+                className="flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm"
               >
                 <span>
                   {formatDateLabel(new Date(t.startDate), tz)} —{" "}
@@ -395,7 +410,7 @@ function Availability({
                   onClick={() => removeTimeOff(t.id)}
                   className="text-muted underline underline-offset-4 hover:text-red-600"
                 >
-                  Remove
+                  Entfernen
                 </button>
               </li>
             ))}
@@ -407,7 +422,7 @@ function Availability({
           className="mt-4 flex flex-wrap items-end gap-3 text-sm"
         >
           <label className="flex flex-col gap-1">
-            <span className="text-muted">From</span>
+            <span className="text-muted">Von</span>
             <input
               type="date"
               required
@@ -417,7 +432,7 @@ function Availability({
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-muted">To</span>
+            <span className="text-muted">Bis</span>
             <input
               type="date"
               required
@@ -427,7 +442,7 @@ function Availability({
             />
           </label>
           <label className="flex flex-1 flex-col gap-1">
-            <span className="text-muted">Reason (optional)</span>
+            <span className="text-muted">Grund (optional)</span>
             <input
               type="text"
               value={reason}
@@ -440,7 +455,7 @@ function Availability({
             disabled={addingOff}
             className="rounded-xl border border-line px-4 py-2 font-medium hover:border-foreground disabled:opacity-50"
           >
-            Add
+            Hinzufügen
           </button>
         </form>
         {offError && <p className="mt-2 text-sm text-red-600">{offError}</p>}

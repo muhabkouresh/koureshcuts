@@ -21,7 +21,7 @@ export async function GET(
   try {
     ics = buildIcs({
       title: `${appt.service.name} — ${siteConfig.name}`,
-      description: `Your ${appt.service.name} appointment at ${siteConfig.name}. Payment in shop.`,
+      description: `Dein Termin (${appt.service.name}) bei ${siteConfig.name}. Zahlung vor Ort.`,
       location: siteConfig.address,
       start: appt.startTime,
       end: appt.endTime,

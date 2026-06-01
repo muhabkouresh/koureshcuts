@@ -6,13 +6,10 @@ export const createAppointmentSchema = z.object({
   serviceId: z.string().min(1, "Service is required."),
   // Absolute start instant as ISO string; the server recomputes the end time.
   start: z.string().datetime({ message: "Invalid start time." }),
-  customerName: z.string().trim().min(1, "Name is required.").max(120),
-  customerEmail: z.string().trim().email("Enter a valid email."),
-  customerPhone: z
-    .string()
-    .trim()
-    .min(7, "Enter a valid phone number.")
-    .max(30),
+  customerName: z.string().trim().min(1, "Name ist erforderlich.").max(120),
+  customerEmail: z.string().trim().email("Gültige E-Mail eingeben."),
+  // Optional — the public booking form doesn't collect a phone number.
+  customerPhone: z.string().trim().max(30).optional().default(""),
   notes: z.string().trim().max(500).optional().default(""),
 });
 

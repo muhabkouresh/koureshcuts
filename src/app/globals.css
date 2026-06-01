@@ -1,15 +1,17 @@
 @import "tailwindcss";
 
 :root {
+  --page: #f3f4f6;
   --background: #ffffff;
   --foreground: #18181b;
-  --muted: #71717a;
-  --line: #e7e7e4;
+  --muted: #6b7280;
+  --line: #e5e7eb;
   --accent: #18181b;
-  --surface: #fafaf9;
+  --surface: #f9fafb;
 }
 
 @theme inline {
+  --color-page: var(--page);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
@@ -25,7 +27,7 @@ html {
 }
 
 body {
-  background: var(--background);
+  background: var(--page);
   color: var(--foreground);
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;

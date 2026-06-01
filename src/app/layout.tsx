@@ -9,7 +9,7 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: `${siteConfig.name} — Book your cut`,
+  title: `${siteConfig.name} — Termin online buchen`,
   description: siteConfig.description,
 };
 
@@ -19,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} h-full`}>
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+    <html lang="de" className={`${geistSans.variable} h-full`}>
+      <body className="min-h-full flex flex-col bg-page text-foreground">
         {children}
       </body>
     </html>

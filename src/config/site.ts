@@ -1,24 +1,33 @@
 // Single source of truth for business info and branding.
-// PLACEHOLDER CONTENT — edit these values with your real details.
+// Edit these values with your real details.
 
 export const siteConfig = {
-  name: "KoureshCuts",
-  tagline: "Sharp cuts. Clean fades. Booked in seconds.",
+  name: "Kouresh_cuts",
+  // Shown in the hero. Matches the live site.
+  tagline:
+    "Sichere dir deinen Termin bequem online – schnell, einfach und mit sofortiger Bestätigung per E-Mail",
   description:
-    "KoureshCuts is a modern barbershop offering precision haircuts, skin fades, and beard grooming. Book your appointment online in under a minute.",
+    "Online-Terminbuchung für Kouresh_cuts. Wähle deinen Service, finde einen freien Termin und buche in unter einer Minute.",
 
-  // Contact / location (placeholders).
-  phone: "(555) 123-4567",
-  email: "hello@koureshcuts.com",
-  address: "123 Main Street, Suite 4, Your City, ST 00000",
+  // Contact / location (placeholders — edit these).
+  phone: "+49 000 0000000",
+  // Address of the shop (placeholder).
+  address: "Musterstraße 1, 00000 Musterstadt",
+  // Owner inbox that receives a copy of every new booking.
+  ownerEmail: "muhabkouresh05@gmail.com",
+  // "From" sender shown on customer emails (display name).
+  email: "termine@kouresh-cuts.de",
 
-  // IANA timezone the shop operates in. All availability math uses this.
-  // Change to your local zone, e.g. "America/Los_Angeles", "Europe/London".
-  timezone: "America/New_York",
+  // Locale + currency used for all formatting.
+  locale: "de-DE",
+  currency: "EUR",
+
+  // IANA timezone the shop operates in.
+  timezone: "Europe/Berlin",
 
   // Social links (leave a value empty "" to hide it).
   socials: {
-    instagram: "https://instagram.com/",
+    instagram: "https://instagram.com/kouresh_cuts",
     tiktok: "",
     facebook: "",
   },
