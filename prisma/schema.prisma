@@ -1,0 +1,68 @@
+// KoureshCuts booking database.
+//
+// Developed against SQLite for zero-setup local dev. To deploy on Neon/Vercel
+// Postgres: change `provider` to "postgresql", point DATABASE_URL at Neon, then
+// run `npx prisma migrate reset` (fresh project) or `npx prisma db push`.
+// The schema is intentionally Postgres-portable: no SQLite-only types, statuses
+// stored as plain strings (see AppointmentStatus in src/lib/constants.ts),
+// money as integer cents, durations/hours as integer minutes, times as UTC.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A bookable service (haircut, beard trim, etc.).
+model Service {
+  id              String        @id @default(cuid())
+  name            String
+  description     String        @default("")
+  durationMinutes Int
+  priceCents      Int
+  active          Boolean       @default(true)
+  sortOrder       Int           @default(0)
+  appointments    Appointment[]
+  createdAt       DateTime      @default(now())
+}
+
+/// Weekly opening-hours template, one row per weekday (0 = Sunday … 6 = Saturday).
+/// openMinute/closeMinute are minutes from midnight in the business timezone.
+model BusinessHours {
+  id          String  @id @default(cuid())
+  dayOfWeek   Int     @unique
+  openMinute  Int     @default(540) // 09:00
+  closeMinute Int     @default(1020) // 17:00
+  isClosed    Boolean @default(false)
+}
+
+/// A blocked-out date range (vacation, day off). Inclusive of both dates.
+model TimeOff {
+  id        String   @id @default(cuid())
+  startDate DateTime
+  endDate   DateTime
+  reason    String   @default("")
+  createdAt DateTime @default(now())
+}
+
+/// A customer appointment. PENDING/CONFIRMED occupy the slot; CANCELLED frees it.
+model Appointment {
+  id             String    @id @default(cuid())
+  service        Service   @relation(fields: [serviceId], references: [id])
+  serviceId      String
+  customerName   String
+  customerEmail  String
+  customerPhone  String
+  startTime      DateTime
+  endTime        DateTime
+  status         String    @default("CONFIRMED")
+  notes          String    @default("")
+  reminderSentAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([startTime])
+  @@index([status])
+}

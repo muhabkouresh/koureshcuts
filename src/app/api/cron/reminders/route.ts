@@ -1,0 +1,51 @@
+import type { NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { ACTIVE_STATUSES } from "@/lib/constants";
+import { sendReminderEmail } from "@/lib/email";
+
+// GET /api/cron/reminders — invoked daily by Vercel Cron. Sends a reminder
+// email for every active appointment starting within the next 24 hours that
+// hasn't already been reminded. Guarded by CRON_SECRET.
+export async function GET(request: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  const auth = request.headers.get("authorization");
+  if (!secret || auth !== `Bearer ${secret}`) {
+    return Response.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 60 * 60_000);
+
+  const due = await prisma.appointment.findMany({
+    where: {
+      status: { in: ACTIVE_STATUSES },
+      reminderSentAt: null,
+      startTime: { gt: now, lte: in24h },
+    },
+    include: { service: true },
+  });
+
+  let sent = 0;
+  for (const appt of due) {
+    try {
+      await sendReminderEmail({
+        id: appt.id,
+        customerName: appt.customerName,
+        customerEmail: appt.customerEmail,
+        serviceName: appt.service.name,
+        priceCents: appt.service.priceCents,
+        start: appt.startTime,
+        end: appt.endTime,
+      });
+      await prisma.appointment.update({
+        where: { id: appt.id },
+        data: { reminderSentAt: new Date() },
+      });
+      sent++;
+    } catch (err) {
+      console.error(`reminder failed for ${appt.id}`, err);
+    }
+  }
+
+  return Response.json({ ok: true, considered: due.length, sent });
+}
