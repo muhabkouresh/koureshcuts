@@ -218,14 +218,14 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                   Keine freien Zeiten an diesem Tag. Bitte anderen Tag wählen.
                 </p>
               ) : (
-                <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                <div className="mt-3 grid grid-cols-2 gap-3">
                   {slots.map((s) => {
                     const active = slot?.start === s.start;
                     return (
                       <button
                         key={s.start}
                         onClick={() => setSlot(s)}
-                        className={`rounded-lg px-2 py-2 text-sm ring-1 transition-colors ${
+                        className={`rounded-xl px-4 py-4 text-lg font-semibold shadow-sm ring-1 transition-colors ${
                           active
                             ? "bg-foreground text-background ring-foreground"
                             : "bg-background ring-line hover:ring-foreground"

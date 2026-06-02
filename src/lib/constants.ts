@@ -16,5 +16,5 @@ export const ACTIVE_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.CONFIRMED,
 ];
 
-// Granularity of bookable start times, in minutes.
-export const SLOT_INTERVAL_MINUTES = 15;
+// Granularity of bookable start times, in minutes (half-hour steps).
+export const SLOT_INTERVAL_MINUTES = 30;
