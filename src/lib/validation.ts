@@ -53,6 +53,6 @@ export const appointmentActionSchema = z.object({
 });
 
 export const settingsSchema = z.object({
-  // How many weeks ahead customers may book (1–52).
-  bookingWindowWeeks: z.number().int().min(1).max(52),
+  // How many days ahead customers may book (1–365).
+  bookingWindowDays: z.number().int().min(1).max(365),
 });

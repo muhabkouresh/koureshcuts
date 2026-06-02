@@ -18,11 +18,11 @@ export async function PUT(request: Request) {
   const parsed = settingsSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Bitte 1–52 Wochen angeben." },
+      { error: "Bitte 1–365 Tage angeben." },
       { status: 400 },
     );
   }
 
-  await setBookingWindowDays(parsed.data.bookingWindowWeeks * 7);
+  await setBookingWindowDays(parsed.data.bookingWindowDays);
   return Response.json({ ok: true });
 }

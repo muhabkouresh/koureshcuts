@@ -45,7 +45,7 @@ export default async function AdminPage() {
 
   const data = {
     feedUrl,
-    bookingWindowWeeks: Math.max(1, Math.round(settings.bookingWindowDays / 7)),
+    bookingWindowDays: settings.bookingWindowDays,
     services,
     appointments: appointments.map((a) => ({
       id: a.id,

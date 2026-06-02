@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { priceShort } from "@/lib/format";
 import { googleCalUrl } from "@/lib/gcal";
+import DatePicker from "./DatePicker";
 import {
   dateKey,
   daysInMonth,
@@ -56,7 +57,7 @@ type Customer = { name: string; email: string; phone: string };
 
 type Data = {
   feedUrl: string;
-  bookingWindowWeeks: number;
+  bookingWindowDays: number;
   services: Service[];
   appointments: Appointment[];
   hours: DayHours[];
@@ -171,7 +172,7 @@ export default function AdminDashboard({
         <Availability
           hours={data.hours}
           timeOff={data.timeOff}
-          bookingWindowWeeks={data.bookingWindowWeeks}
+          bookingWindowDays={data.bookingWindowDays}
           onChange={() => router.refresh()}
         />
       )}
@@ -644,12 +645,7 @@ function ScheduleForm({
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Datum</span>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-line bg-background px-3 py-2"
-          />
+          <DatePicker value={date} onChange={setDate} />
         </label>
 
         <label className="flex flex-col gap-1 text-sm">
@@ -738,15 +734,15 @@ function ScheduleForm({
 function Availability({
   hours,
   timeOff,
-  bookingWindowWeeks,
+  bookingWindowDays,
   onChange,
 }: {
   hours: DayHours[];
   timeOff: TimeOff[];
-  bookingWindowWeeks: number;
+  bookingWindowDays: number;
   onChange: () => void;
 }) {
-  const [weeks, setWeeks] = useState(bookingWindowWeeks);
+  const [days, setDays] = useState(bookingWindowDays);
   const [savingWindow, setSavingWindow] = useState(false);
   const [windowMsg, setWindowMsg] = useState<string | null>(null);
 
@@ -757,7 +753,7 @@ function Availability({
       const res = await fetch("/api/admin/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingWindowWeeks: weeks }),
+        body: JSON.stringify({ bookingWindowDays: days }),
       });
       const d = await res.json().catch(() => ({}));
       setWindowMsg(
@@ -816,6 +812,10 @@ function Availability({
 
   async function addTimeOff(e: React.FormEvent) {
     e.preventDefault();
+    if (!start || !end) {
+      setOffError("Bitte Von- und Bis-Datum wählen.");
+      return;
+    }
     setAddingOff(true);
     setOffError(null);
     try {
@@ -849,18 +849,18 @@ function Availability({
       <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
         <h2 className="text-sm font-semibold">Buchungszeitraum</h2>
         <p className="mt-1 text-xs text-muted">
-          Wie viele Wochen im Voraus Kunden online buchen können.
+          Wie viele Tage im Voraus Kunden online buchen können.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
           <input
             type="number"
             min={1}
-            max={52}
-            value={weeks}
-            onChange={(e) => setWeeks(Number(e.target.value))}
+            max={365}
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
             className="w-20 rounded-lg border border-line bg-background px-3 py-2"
           />
-          <span className="text-muted">Wochen im Voraus</span>
+          <span className="text-muted">Tage im Voraus</span>
           <button
             onClick={saveWindow}
             disabled={savingWindow}
@@ -981,25 +981,13 @@ function Availability({
           onSubmit={addTimeOff}
           className="mt-4 flex flex-wrap items-end gap-3 text-sm"
         >
-          <label className="flex flex-col gap-1">
+          <label className="flex w-36 flex-col gap-1">
             <span className="text-muted">Von</span>
-            <input
-              type="date"
-              required
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="rounded-lg border border-line bg-background px-2 py-1"
-            />
+            <DatePicker value={start} onChange={setStart} />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="flex w-36 flex-col gap-1">
             <span className="text-muted">Bis</span>
-            <input
-              type="date"
-              required
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              className="rounded-lg border border-line bg-background px-2 py-1"
-            />
+            <DatePicker value={end} onChange={setEnd} />
           </label>
           <label className="flex flex-1 flex-col gap-1">
             <span className="text-muted">Grund (optional)</span>
