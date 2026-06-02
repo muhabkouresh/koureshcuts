@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
+import { getSettings } from "@/lib/settings";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 
 export const dynamic = "force-dynamic";
@@ -15,24 +16,26 @@ export default async function AdminPage() {
   const from = new Date(Date.now() - 31 * 24 * 60 * 60_000);
   const to = new Date(Date.now() + 92 * 24 * 60 * 60_000);
 
-  const [appointments, services, hoursRows, timeOff] = await Promise.all([
-    prisma.appointment.findMany({
-      where: { startTime: { gte: from, lte: to } },
-      orderBy: { startTime: "asc" },
-      include: { service: { select: { name: true, durationMinutes: true } } },
-      take: 1000,
-    }),
-    prisma.service.findMany({
-      where: { active: true },
-      orderBy: { sortOrder: "asc" },
-      select: { id: true, name: true, durationMinutes: true, priceCents: true },
-    }),
-    prisma.businessHours.findMany({ orderBy: { dayOfWeek: "asc" } }),
-    prisma.timeOff.findMany({
-      where: { endDate: { gte: new Date() } },
-      orderBy: { startDate: "asc" },
-    }),
-  ]);
+  const [appointments, services, hoursRows, timeOff, settings] =
+    await Promise.all([
+      prisma.appointment.findMany({
+        where: { startTime: { gte: from, lte: to } },
+        orderBy: { startTime: "asc" },
+        include: { service: { select: { name: true, durationMinutes: true } } },
+        take: 1000,
+      }),
+      prisma.service.findMany({
+        where: { active: true },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, name: true, durationMinutes: true, priceCents: true },
+      }),
+      prisma.businessHours.findMany({ orderBy: { dayOfWeek: "asc" } }),
+      prisma.timeOff.findMany({
+        where: { endDate: { gte: new Date() } },
+        orderBy: { startDate: "asc" },
+      }),
+      getSettings(),
+    ]);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   const feedToken = process.env.ICS_FEED_TOKEN || "";
@@ -42,6 +45,7 @@ export default async function AdminPage() {
 
   const data = {
     feedUrl,
+    bookingWindowWeeks: Math.max(1, Math.round(settings.bookingWindowDays / 7)),
     services,
     appointments: appointments.map((a) => ({
       id: a.id,

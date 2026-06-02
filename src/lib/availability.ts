@@ -1,6 +1,7 @@
 import type { Service, BusinessHours, Appointment } from "@prisma/client";
 import { prisma } from "./prisma";
 import { siteConfig } from "@/config/site";
+import { getSettings } from "./settings";
 import { ACTIVE_STATUSES, SLOT_INTERVAL_MINUTES } from "./constants";
 import {
   daysInMonth,
@@ -46,12 +47,11 @@ function computeSlots(
   timeOffs: TimeOffWindow[],
   appointments: ApptWindow[],
   now: Date,
+  windowDays: number,
 ): Slot[] {
   const duration = service.durationMinutes;
   const minStart = new Date(now.getTime() + siteConfig.minLeadMinutes * 60_000);
-  const windowEnd = new Date(
-    now.getTime() + siteConfig.bookingWindowDays * 24 * 60 * 60_000,
-  );
+  const windowEnd = new Date(now.getTime() + windowDays * 24 * 60 * 60_000);
 
   const hours = hoursByDay.get(weekdayOf(dateStr));
   if (!hours || hours.isClosed || hours.closeMinute <= hours.openMinute) {
@@ -107,7 +107,7 @@ export async function getAvailability(
   const dayStartUtc = zonedToUtc(dateStr, 0, tz);
   const dayEndUtc = zonedToUtc(dateStr, 24 * 60, tz);
 
-  const [hoursByDay, timeOffs, appointments] = await Promise.all([
+  const [hoursByDay, timeOffs, appointments, settings] = await Promise.all([
     loadHoursMap(),
     prisma.timeOff.findMany({
       where: { startDate: { lt: dayEndUtc }, endDate: { gte: dayStartUtc } },
@@ -121,6 +121,7 @@ export async function getAvailability(
       },
       select: { startTime: true, endTime: true },
     }),
+    getSettings(),
   ]);
 
   const slots = computeSlots(
@@ -130,6 +131,7 @@ export async function getAvailability(
     timeOffs,
     appointments,
     new Date(),
+    settings.bookingWindowDays,
   );
   return {
     date: dateStr,
@@ -154,7 +156,7 @@ export async function getMonthAvailability(
   const total = daysInMonth(year, month0);
   const monthEndUtc = zonedToUtc(toDateStr(year, month0, total), 24 * 60, tz);
 
-  const [hoursByDay, timeOffs, appointments] = await Promise.all([
+  const [hoursByDay, timeOffs, appointments, settings] = await Promise.all([
     loadHoursMap(),
     prisma.timeOff.findMany({
       where: { startDate: { lt: monthEndUtc }, endDate: { gte: monthStartUtc } },
@@ -168,6 +170,7 @@ export async function getMonthAvailability(
       },
       select: { startTime: true, endTime: true },
     }),
+    getSettings(),
   ]);
 
   const now = new Date();
@@ -181,6 +184,7 @@ export async function getMonthAvailability(
       timeOffs,
       appointments,
       now,
+      settings.bookingWindowDays,
     );
     if (slots.length > 0) days.push(day);
   }

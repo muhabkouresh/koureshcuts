@@ -51,3 +51,8 @@ export const timeOffSchema = z.object({
 export const appointmentActionSchema = z.object({
   status: z.enum(["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]),
 });
+
+export const settingsSchema = z.object({
+  // How many weeks ahead customers may book (1–52).
+  bookingWindowWeeks: z.number().int().min(1).max(52),
+});

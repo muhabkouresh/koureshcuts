@@ -33,6 +33,14 @@ const hours = [
 ];
 
 async function main() {
+  // Settings singleton (booking window default: 4 weeks = 28 days).
+  await prisma.settings.upsert({
+    where: { id: "singleton" },
+    update: {},
+    create: { id: "singleton", bookingWindowDays: 28 },
+  });
+  console.log("Seeded settings (booking window).");
+
   for (const h of hours) {
     await prisma.businessHours.upsert({
       where: { dayOfWeek: h.dayOfWeek },

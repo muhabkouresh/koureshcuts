@@ -56,11 +56,17 @@ type Customer = { name: string; email: string; phone: string };
 
 type Data = {
   feedUrl: string;
+  bookingWindowWeeks: number;
   services: Service[];
   appointments: Appointment[];
   hours: DayHours[];
   timeOff: TimeOff[];
 };
+
+// 24h time options in 15-minute steps ("00:00" … "23:45") for German selects.
+const TIME_OPTIONS: string[] = Array.from({ length: (24 * 60) / 15 }, (_, i) =>
+  minutesToHHMM(i * 15),
+);
 
 const tz = siteConfig.timezone;
 const WEEKDAYS_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -165,6 +171,7 @@ export default function AdminDashboard({
         <Availability
           hours={data.hours}
           timeOff={data.timeOff}
+          bookingWindowWeeks={data.bookingWindowWeeks}
           onChange={() => router.refresh()}
         />
       )}
@@ -647,12 +654,17 @@ function ScheduleForm({
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Uhrzeit</span>
-          <input
-            type="time"
+          <select
             value={time}
             onChange={(e) => setTime(e.target.value)}
-            className="rounded-lg border border-line bg-background px-3 py-2"
-          />
+            className="rounded-lg border border-line bg-background px-3 py-2 tabular-nums"
+          >
+            {TIME_OPTIONS.map((t) => (
+              <option key={t} value={t}>
+                {t} Uhr
+              </option>
+            ))}
+          </select>
         </label>
 
         <label className="flex flex-col gap-1 text-sm">
@@ -726,12 +738,37 @@ function ScheduleForm({
 function Availability({
   hours,
   timeOff,
+  bookingWindowWeeks,
   onChange,
 }: {
   hours: DayHours[];
   timeOff: TimeOff[];
+  bookingWindowWeeks: number;
   onChange: () => void;
 }) {
+  const [weeks, setWeeks] = useState(bookingWindowWeeks);
+  const [savingWindow, setSavingWindow] = useState(false);
+  const [windowMsg, setWindowMsg] = useState<string | null>(null);
+
+  async function saveWindow() {
+    setSavingWindow(true);
+    setWindowMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingWindowWeeks: weeks }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setWindowMsg(
+        res.ok ? "Gespeichert." : d.error ?? "Konnte nicht gespeichert werden.",
+      );
+      if (res.ok) onChange();
+    } finally {
+      setSavingWindow(false);
+    }
+  }
+
   const [draft, setDraft] = useState<DayHours[]>(() =>
     DISPLAY_ORDER.map(
       (dow) =>
@@ -808,6 +845,33 @@ function Availability({
 
   return (
     <div className="mt-6 flex flex-col gap-8">
+      {/* Booking window */}
+      <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+        <h2 className="text-sm font-semibold">Buchungszeitraum</h2>
+        <p className="mt-1 text-xs text-muted">
+          Wie viele Wochen im Voraus Kunden online buchen können.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+          <input
+            type="number"
+            min={1}
+            max={52}
+            value={weeks}
+            onChange={(e) => setWeeks(Number(e.target.value))}
+            className="w-20 rounded-lg border border-line bg-background px-3 py-2"
+          />
+          <span className="text-muted">Wochen im Voraus</span>
+          <button
+            onClick={saveWindow}
+            disabled={savingWindow}
+            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+          >
+            {savingWindow ? "Speichern…" : "Speichern"}
+          </button>
+          {windowMsg && <span className="text-sm text-muted">{windowMsg}</span>}
+        </div>
+      </section>
+
       {/* Weekly hours */}
       <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
         <h2 className="text-sm font-semibold">Öffnungszeiten</h2>
@@ -836,27 +900,37 @@ function Availability({
               </button>
               {!d.isClosed && (
                 <div className="flex items-center gap-2">
-                  <input
-                    type="time"
+                  <select
                     value={minutesToHHMM(d.openMinute)}
                     onChange={(e) =>
                       updateDay(d.dayOfWeek, {
                         openMinute: hhmmToMinutes(e.target.value),
                       })
                     }
-                    className="rounded-lg border border-line bg-background px-2 py-1"
-                  />
+                    className="rounded-lg border border-line bg-background px-2 py-1 tabular-nums"
+                  >
+                    {TIME_OPTIONS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
                   <span className="text-muted">bis</span>
-                  <input
-                    type="time"
+                  <select
                     value={minutesToHHMM(d.closeMinute)}
                     onChange={(e) =>
                       updateDay(d.dayOfWeek, {
                         closeMinute: hhmmToMinutes(e.target.value),
                       })
                     }
-                    className="rounded-lg border border-line bg-background px-2 py-1"
-                  />
+                    className="rounded-lg border border-line bg-background px-2 py-1 tabular-nums"
+                  >
+                    {TIME_OPTIONS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
                   <span className="text-muted">Uhr</span>
                 </div>
               )}

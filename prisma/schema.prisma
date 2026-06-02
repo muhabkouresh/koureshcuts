@@ -39,6 +39,14 @@ model BusinessHours {
   isClosed    Boolean @default(false)
 }
 
+/// Singleton row of editable shop settings.
+model Settings {
+  id                String   @id @default("singleton")
+  /// How many days ahead customers may book (the public booking window).
+  bookingWindowDays Int      @default(28)
+  updatedAt         DateTime @updatedAt
+}
+
 /// A blocked-out date range (vacation, day off). Inclusive of both dates.
 model TimeOff {
   id        String   @id @default(cuid())
