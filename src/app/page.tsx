@@ -40,40 +40,25 @@ export default async function Home() {
   return (
     <>
       {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-zinc-900 via-zinc-800 to-zinc-700 text-white">
-        {/* Logo backdrop. Drop a real logo at /public/logo.png to replace this. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 flex items-center justify-center select-none"
-        >
-          <span className="text-[18vw] font-black tracking-[0.15em] text-red-900/30 sm:text-[12rem]">
-            ✂
-          </span>
-        </div>
-
-        <div className="relative mx-auto flex max-w-3xl flex-col items-center px-5 py-24 text-center sm:py-32">
-          <h1 className="text-4xl font-bold tracking-tight drop-shadow sm:text-6xl">
-            {siteConfig.name}
-          </h1>
-          <p className="mt-5 max-w-xl text-base text-zinc-200 sm:text-lg">
+      <section className="relative overflow-hidden border-b border-line bg-white">
+        <div className="mx-auto flex max-w-3xl flex-col items-center px-5 py-14 text-center sm:py-20">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt={`${siteConfig.name} Barber`}
+            className="w-52 sm:w-72"
+          />
+          {/* Logo already contains the brand name; keep an H1 for SEO. */}
+          <h1 className="sr-only">{siteConfig.name}</h1>
+          <p className="mt-4 max-w-xl text-base text-muted sm:text-lg">
             {siteConfig.tagline}
           </p>
           <Link
             href="#book"
-            className="mt-9 rounded-full bg-emerald-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg transition-colors hover:bg-emerald-700"
+            className="mt-8 rounded-full bg-emerald-600 px-8 py-3.5 text-base font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700"
           >
             Service auswählen
           </Link>
-
-          <div
-            aria-hidden
-            className="mt-16 text-3xl font-black tracking-[0.35em] text-red-800/70 sm:text-5xl"
-          >
-            KOURESH_CUTS
-            <div className="mt-1 text-xs font-bold tracking-[0.5em] text-zinc-400">
-              BARBER
-            </div>
-          </div>
         </div>
       </section>
 
