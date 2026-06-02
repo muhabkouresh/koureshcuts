@@ -145,10 +145,10 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   // --- Step: choose service ---
   if (step === "service") {
     return (
-      <div className="mx-auto w-full max-w-3xl">
-        <h2 className="text-3xl font-bold tracking-tight">Services</h2>
+      <div className="mx-auto w-full max-w-lg">
+        <h2 className="font-display text-3xl font-bold tracking-tight">Services</h2>
         <p className="mt-1 text-muted">Wähle den Service, der zu dir passt.</p>
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2">
+        <ul className="mt-6 flex flex-col gap-3">
           {services.map((s, i) => (
             <li
               key={s.id}
@@ -158,19 +158,19 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                 className={`h-full w-1.5 self-stretch ${ACCENTS[i % ACCENTS.length]}`}
                 aria-hidden
               />
-              <div className="flex flex-1 items-center justify-between gap-3 p-5">
-                <div>
-                  <p className="text-lg font-semibold">
+              <div className="flex flex-1 items-center justify-between gap-3 px-4 py-3.5">
+                <div className="min-w-0">
+                  <p className="whitespace-nowrap text-base font-semibold">
                     {s.name}{" "}
                     <span className="font-bold">| {priceShort(s.priceCents)}</span>
                   </p>
-                  <p className="mt-1 text-sm text-muted">
+                  <p className="mt-0.5 text-xs text-muted">
                     Dauer: {s.durationMinutes} Min.
                   </p>
                 </div>
                 <button
                   onClick={() => chooseService(s)}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-transform hover:scale-[1.02]"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-transform hover:scale-[1.02]"
                 >
                   Auswählen <span aria-hidden>→</span>
                 </button>
