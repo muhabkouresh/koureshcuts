@@ -1,4 +1,4 @@
-import { createEvent, type EventAttributes } from "ics";
+import { createEvent, createEvents, type EventAttributes } from "ics";
 import { siteConfig } from "@/config/site";
 
 export type CalendarEvent = {
@@ -38,6 +38,32 @@ export function buildIcs(event: CalendarEvent): string {
   const { error, value } = createEvent(attributes);
   if (error || !value) {
     throw error ?? new Error("Failed to build calendar event.");
+  }
+  return value;
+}
+
+/** Build a multi-event .ics feed (for calendar subscription). */
+export function buildIcsFeed(events: CalendarEvent[]): string {
+  if (events.length === 0) {
+    // Minimal valid empty calendar.
+    return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:${siteConfig.name}\r\nCALSCALE:GREGORIAN\r\nNAME:${siteConfig.name} Termine\r\nX-WR-CALNAME:${siteConfig.name} Termine\r\nEND:VCALENDAR\r\n`;
+  }
+  const attrs: EventAttributes[] = events.map((event) => ({
+    title: event.title,
+    description: event.description,
+    location: event.location,
+    start: utcParts(event.start),
+    startInputType: "utc",
+    end: utcParts(event.end),
+    endInputType: "utc",
+    productId: siteConfig.name,
+    calName: `${siteConfig.name} Termine`,
+    status: "CONFIRMED",
+  }));
+
+  const { error, value } = createEvents(attrs);
+  if (error || !value) {
+    throw error ?? new Error("Failed to build calendar feed.");
   }
   return value;
 }

@@ -19,6 +19,18 @@ export const adminLoginSchema = z.object({
   password: z.string().min(1, "Password is required."),
 });
 
+// Admin manually scheduling an appointment. More permissive than the public
+// form: email is optional (walk-ins), and time is not restricted to open slots.
+export const adminCreateAppointmentSchema = z.object({
+  serviceId: z.string().min(1, "Service ist erforderlich."),
+  start: z.string().datetime({ message: "Ungültige Startzeit." }),
+  customerName: z.string().trim().min(1, "Name ist erforderlich.").max(120),
+  customerEmail: z.string().trim().max(200).optional().default(""),
+  customerPhone: z.string().trim().max(30).optional().default(""),
+  notes: z.string().trim().max(500).optional().default(""),
+  notify: z.boolean().optional().default(false),
+});
+
 export const businessHoursSchema = z.object({
   dayOfWeek: z.number().int().min(0).max(6),
   isClosed: z.boolean(),

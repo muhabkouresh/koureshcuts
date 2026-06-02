@@ -61,6 +61,11 @@ export function todayInTz(tz: string): string {
   return formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
 }
 
+/** Calendar-date key ("YYYY-MM-DD") for an instant, in the shop timezone. */
+export function dateKey(date: Date, tz: string): string {
+  return formatInTimeZone(date, tz, "yyyy-MM-dd");
+}
+
 /** Add `n` days to a "YYYY-MM-DD" string, returning a new "YYYY-MM-DD" string. */
 export function addDaysToDateStr(dateStr: string, n: number): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
