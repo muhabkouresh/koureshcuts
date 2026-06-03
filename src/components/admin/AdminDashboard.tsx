@@ -643,10 +643,10 @@ function ScheduleForm({
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
+        <div className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Datum</span>
           <DatePicker value={date} onChange={setDate} />
-        </label>
+        </div>
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Uhrzeit</span>
@@ -993,14 +993,14 @@ function Availability({
         )}
 
         <form onSubmit={addTimeOff} className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm">
+          <div className="flex flex-col gap-1 text-sm">
             <span className="text-muted">Von</span>
             <DatePicker value={start} onChange={setStart} />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
+          </div>
+          <div className="flex flex-col gap-1 text-sm">
             <span className="text-muted">Bis (optional)</span>
             <DatePicker value={end} onChange={setEnd} />
-          </label>
+          </div>
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
             <span className="text-muted">Grund (optional)</span>
             <input
