@@ -812,8 +812,13 @@ function Availability({
 
   async function addTimeOff(e: React.FormEvent) {
     e.preventDefault();
-    if (!start || !end) {
-      setOffError("Bitte Von- und Bis-Datum wählen.");
+    if (!start) {
+      setOffError("Bitte ein Von-Datum wählen.");
+      return;
+    }
+    const finalEnd = end || start; // single day if no Bis chosen
+    if (finalEnd < start) {
+      setOffError("Bis-Datum muss am/nach dem Von-Datum liegen.");
       return;
     }
     setAddingOff(true);
@@ -822,7 +827,7 @@ function Availability({
       const res = await fetch("/api/admin/timeoff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate: start, endDate: end, reason }),
+        body: JSON.stringify({ startDate: start, endDate: finalEnd, reason }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -952,61 +957,71 @@ function Availability({
       {/* Time off */}
       <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
         <h2 className="text-sm font-semibold">Freie Tage / Urlaub</h2>
+        <p className="mt-1 text-xs text-muted">
+          Sperre einen einzelnen Tag (nur „Von" wählen) oder einen Zeitraum
+          („Von" und „Bis"). An gesperrten Tagen sind keine Buchungen möglich.
+        </p>
 
         {timeOff.length > 0 && (
           <ul className="mt-4 flex flex-col gap-2">
-            {timeOff.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm"
-              >
-                <span>
-                  {formatDateLabel(new Date(t.startDate), tz)} –{" "}
-                  {/* endDate is stored as next-midnight; show the last full day */}
-                  {formatDateLabel(new Date(new Date(t.endDate).getTime() - 1), tz)}
-                  {t.reason && <span className="text-muted"> · {t.reason}</span>}
-                </span>
-                <button
-                  onClick={() => removeTimeOff(t.id)}
-                  className="text-muted underline underline-offset-4 hover:text-red-600"
+            {timeOff.map((t) => {
+              const fromLabel = formatDateLabel(new Date(t.startDate), tz);
+              // endDate is stored as next-midnight; show the last full day.
+              const toLabel = formatDateLabel(
+                new Date(new Date(t.endDate).getTime() - 1),
+                tz,
+              );
+              return (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm"
                 >
-                  Entfernen
-                </button>
-              </li>
-            ))}
+                  <span>
+                    {fromLabel === toLabel ? fromLabel : `${fromLabel} – ${toLabel}`}
+                    {t.reason && <span className="text-muted"> · {t.reason}</span>}
+                  </span>
+                  <button
+                    onClick={() => removeTimeOff(t.id)}
+                    className="text-muted underline underline-offset-4 hover:text-red-600"
+                  >
+                    Entfernen
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
 
-        <form
-          onSubmit={addTimeOff}
-          className="mt-4 flex flex-wrap items-end gap-3 text-sm"
-        >
-          <label className="flex w-36 flex-col gap-1">
+        <form onSubmit={addTimeOff} className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted">Von</span>
             <DatePicker value={start} onChange={setStart} />
           </label>
-          <label className="flex w-36 flex-col gap-1">
-            <span className="text-muted">Bis</span>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted">Bis (optional)</span>
             <DatePicker value={end} onChange={setEnd} />
           </label>
-          <label className="flex flex-1 flex-col gap-1">
+          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
             <span className="text-muted">Grund (optional)</span>
             <input
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="rounded-lg border border-line bg-background px-2 py-1"
+              placeholder="z. B. Urlaub"
+              className="rounded-lg border border-line bg-background px-3 py-2"
             />
           </label>
+          {offError && (
+            <p className="text-sm text-red-600 sm:col-span-2">{offError}</p>
+          )}
           <button
             type="submit"
             disabled={addingOff}
-            className="rounded-xl border border-line px-4 py-2 font-medium hover:border-foreground disabled:opacity-50"
+            className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50 sm:col-span-2"
           >
-            Hinzufügen
+            {addingOff ? "Wird gesperrt…" : "Zeitraum sperren"}
           </button>
         </form>
-        {offError && <p className="mt-2 text-sm text-red-600">{offError}</p>}
       </section>
     </div>
   );

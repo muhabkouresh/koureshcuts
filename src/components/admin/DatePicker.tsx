@@ -70,19 +70,34 @@ export default function DatePicker({
       <button
         type="button"
         onClick={openCal}
-        className="w-full rounded-lg border border-line bg-background px-3 py-2 text-left tabular-nums hover:border-foreground"
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-background px-3 py-2 text-left hover:border-foreground"
       >
-        {deLabel(value)}
+        <span className={value ? "tabular-nums" : "text-muted"}>
+          {deLabel(value)}
+        </span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          className="shrink-0 text-muted"
+          aria-hidden
+        >
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <path d="M16 2v4M8 2v4M3 10h18" />
+        </svg>
       </button>
 
       {open && (
         <>
           <div
-            className="fixed inset-0 z-10"
+            className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
             aria-hidden
           />
-          <div className="absolute left-0 top-full z-20 mt-1 w-72 rounded-xl border border-line bg-background p-3 shadow-lg">
+          <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-xl border border-line bg-background p-3 shadow-lg">
             <div className="flex items-center justify-between">
               <button
                 type="button"
