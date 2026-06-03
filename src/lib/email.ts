@@ -71,7 +71,7 @@ async function send({ to, subject, html, attachIcs }: SendArgs): Promise<void> {
     );
     return;
   }
-  await resend.emails.send({
+  const { data, error } = await resend.emails.send({
     from: FROM,
     to,
     subject,
@@ -80,6 +80,11 @@ async function send({ to, subject, html, attachIcs }: SendArgs): Promise<void> {
       ? [{ filename: "termin.ics", content: Buffer.from(attachIcs) }]
       : undefined,
   });
+  if (error) {
+    console.error(`[resend] Versand an ${to} fehlgeschlagen:`, error);
+  } else {
+    console.log(`[resend] gesendet an ${to} (id ${data?.id})`);
+  }
 }
 
 /** Confirmation to the customer (with calendar) + a heads-up to the owner. */
