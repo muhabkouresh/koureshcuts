@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { AppointmentStatus } from "@/lib/constants";
 import { verifyCancelToken } from "@/lib/token";
+import { sendCancellationNotice } from "@/lib/email";
 
 // POST /api/appointments/[id]/cancel?t=<token>
 // Public, token-guarded self-cancellation for customers.
@@ -16,7 +17,10 @@ export async function POST(
     return Response.json({ error: "Ungültiger Link." }, { status: 403 });
   }
 
-  const appt = await prisma.appointment.findUnique({ where: { id } });
+  const appt = await prisma.appointment.findUnique({
+    where: { id },
+    include: { service: true },
+  });
   if (!appt) {
     return Response.json({ error: "Termin nicht gefunden." }, { status: 404 });
   }
@@ -28,5 +32,21 @@ export async function POST(
     where: { id },
     data: { status: AppointmentStatus.CANCELLED },
   });
+
+  // Let the owner know the slot freed up (never fail the cancel on email error).
+  try {
+    await sendCancellationNotice({
+      id: appt.id,
+      customerName: appt.customerName,
+      customerEmail: appt.customerEmail,
+      serviceName: appt.service.name,
+      priceCents: appt.service.priceCents,
+      start: appt.startTime,
+      end: appt.endTime,
+    });
+  } catch (err) {
+    console.error("cancellation notice failed", err);
+  }
+
   return Response.json({ ok: true });
 }

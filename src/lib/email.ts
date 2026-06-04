@@ -105,8 +105,9 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
      ${detailsTable(data)}
      <div style="margin-top:24px">
        <a href="${gcal}" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600">Zum Google Kalender hinzufügen</a>
+       <a href="${cancelUrl(data.id)}" style="display:inline-block;margin-left:8px;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600">Termin absagen</a>
      </div>
-     <p style="font-size:13px;color:#888;margin-top:16px">Eine Kalenderdatei ist angehängt, und wir erinnern dich rechtzeitig. Termin absagen? <a href="${cancelUrl(data.id)}" style="color:#8a1f2b">Hier stornieren</a>. Oder ruf an: ${siteConfig.phone}.</p>`,
+     <p style="font-size:13px;color:#888;margin-top:16px">Eine Kalenderdatei ist angehängt, und wir erinnern dich rechtzeitig. Fragen? Ruf an: ${siteConfig.phone}.</p>`,
   );
 
   await send({
@@ -131,17 +132,36 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
   }
 }
 
-/** Day-before reminder to the customer. */
+/** Reminder to the customer ahead of the appointment. */
 export async function sendReminderEmail(data: BookingEmailData): Promise<void> {
   const html = layout(
     "Termin-Erinnerung",
-    `<p style="font-size:14px;color:#444">Hallo ${data.customerName}, das ist eine Erinnerung an deinen Termin morgen:</p>
+    `<p style="font-size:14px;color:#444">Hallo ${data.customerName}, das ist eine Erinnerung an deinen Termin:</p>
      ${detailsTable(data)}
-     <p style="font-size:13px;color:#888;margin-top:16px">Bis bald! Termin absagen? <a href="${cancelUrl(data.id)}" style="color:#8a1f2b">Hier stornieren</a>. Oder ruf an: ${siteConfig.phone}.</p>`,
+     <div style="margin-top:20px">
+       <a href="${cancelUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600">Termin absagen</a>
+     </div>
+     <p style="font-size:13px;color:#888;margin-top:16px">Bis bald! Fragen? Ruf an: ${siteConfig.phone}.</p>`,
   );
   await send({
     to: data.customerEmail,
-    subject: `Erinnerung: ${data.serviceName} morgen bei ${siteConfig.name}`,
+    subject: `Erinnerung: ${data.serviceName} bei ${siteConfig.name}`,
+    html,
+  });
+}
+
+/** Notify the owner that a customer cancelled (slot freed up). */
+export async function sendCancellationNotice(data: BookingEmailData): Promise<void> {
+  if (!siteConfig.ownerEmail) return;
+  const html = layout(
+    "Termin storniert",
+    `<p style="font-size:14px;color:#444">Ein Kunde hat seinen Termin storniert – der Slot ist wieder frei:</p>
+     ${detailsTable(data)}
+     <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${data.customerName}${data.customerEmail ? ` · ${data.customerEmail}` : ""}${data.customerEmail ? "" : ""}</p>`,
+  );
+  await send({
+    to: siteConfig.ownerEmail,
+    subject: `Storniert: ${data.customerName} — ${data.serviceName}`,
     html,
   });
 }

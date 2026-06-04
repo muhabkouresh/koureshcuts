@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { siteConfig } from "@/config/site";
-import { priceShort } from "@/lib/format";
+import { priceShort, priceFull } from "@/lib/format";
 import { googleCalUrl } from "@/lib/gcal";
 import DatePicker from "./DatePicker";
 import {
@@ -121,7 +121,9 @@ export default function AdminDashboard({
   siteName: string;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"termine" | "verfuegbarkeit">("termine");
+  const [tab, setTab] = useState<"termine" | "kunden" | "verfuegbarkeit">(
+    "termine",
+  );
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -144,27 +146,26 @@ export default function AdminDashboard({
       </div>
 
       <div className="mt-6 inline-flex rounded-full border border-line bg-background p-1 text-sm">
-        <button
-          onClick={() => setTab("termine")}
-          className={`rounded-full px-4 py-1.5 transition-colors ${
-            tab === "termine" ? "bg-brand text-white" : "text-muted hover:text-foreground"
-          }`}
-        >
-          Termine
-        </button>
-        <button
-          onClick={() => setTab("verfuegbarkeit")}
-          className={`rounded-full px-4 py-1.5 transition-colors ${
-            tab === "verfuegbarkeit"
-              ? "bg-brand text-white"
-              : "text-muted hover:text-foreground"
-          }`}
-        >
-          Verfügbarkeit
-        </button>
+        {(
+          [
+            ["termine", "Termine"],
+            ["kunden", "Kunden"],
+            ["verfuegbarkeit", "Verfügbarkeit"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`rounded-full px-4 py-1.5 transition-colors ${
+              tab === key ? "bg-brand text-white" : "text-muted hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {tab === "termine" ? (
+      {tab === "termine" && (
         <TermineTab
           appointments={data.appointments}
           services={data.services}
@@ -174,7 +175,11 @@ export default function AdminDashboard({
           siteName={siteName}
           onChange={() => router.refresh()}
         />
-      ) : (
+      )}
+      {tab === "kunden" && (
+        <KundenTab services={data.services} onChange={() => router.refresh()} />
+      )}
+      {tab === "verfuegbarkeit" && (
         <Availability
           hours={data.hours}
           timeOff={data.timeOff}
@@ -645,23 +650,163 @@ function FeedBox({ feedUrl }: { feedUrl: string }) {
   );
 }
 
+/* ----------------------------------- Kunden --------------------------------- */
+
+type CustomerStat = {
+  name: string;
+  email: string;
+  phone: string;
+  appointments: number;
+  completed: number;
+  spentCents: number;
+  lastStart: string | null;
+};
+
+function KundenTab({
+  services,
+  onChange,
+}: {
+  services: Service[];
+  onChange: () => void;
+}) {
+  const [customers, setCustomers] = useState<CustomerStat[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [schedulingFor, setSchedulingFor] = useState<CustomerStat | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch("/api/admin/customers")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setCustomers(d.customers ?? []);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="mt-6 flex flex-col gap-4">
+      {schedulingFor && (
+        <div className="rounded-2xl border border-brand/30 bg-brand-soft/40 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm">
+              Termin für <span className="font-semibold">{schedulingFor.name}</span>{" "}
+              eintragen
+            </p>
+            <button
+              onClick={() => setSchedulingFor(null)}
+              className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
+            >
+              Abbrechen
+            </button>
+          </div>
+          <ScheduleForm
+            key={schedulingFor.email || schedulingFor.name}
+            services={services}
+            defaultDate={todayInTz(tz)}
+            prefill={{
+              name: schedulingFor.name,
+              email: schedulingFor.email,
+              phone: schedulingFor.phone,
+            }}
+            onDone={() => {
+              setSchedulingFor(null);
+              onChange();
+            }}
+          />
+        </div>
+      )}
+
+      <h2 className="text-sm font-semibold text-muted">
+        Kunden ({customers.length})
+      </h2>
+
+      {loading ? (
+        <p className="text-sm text-muted">Lädt…</p>
+      ) : customers.length === 0 ? (
+        <p className="rounded-lg bg-surface px-3 py-3 text-sm text-muted">
+          Noch keine Kunden – sobald jemand bucht, erscheint er hier.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {customers.map((c) => (
+            <li
+              key={`${c.name}|${c.email}`}
+              className="rounded-2xl border border-line bg-background p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold">{c.name}</p>
+                  <p className="mt-0.5 truncate text-sm text-muted">
+                    {c.email && (
+                      <a className="underline" href={`mailto:${c.email}`}>
+                        {c.email}
+                      </a>
+                    )}
+                    {c.email && c.phone ? " · " : ""}
+                    {c.phone && (
+                      <a className="underline" href={`tel:${c.phone}`}>
+                        {c.phone}
+                      </a>
+                    )}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSchedulingFor(c)}
+                  className="shrink-0 rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background"
+                >
+                  + Termin eintragen
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-brand-soft px-2.5 py-1 font-medium text-brand-700">
+                  {c.appointments} Termine
+                </span>
+                <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
+                  {c.completed} wahrgenommen
+                </span>
+                <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
+                  {priceFull(c.spentCents)} ausgegeben
+                </span>
+                {c.lastStart && (
+                  <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
+                    zuletzt {formatDateLabel(new Date(c.lastStart), tz)}
+                  </span>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------ Schedule form ------------------------------ */
 
 function ScheduleForm({
   services,
   defaultDate,
+  prefill,
   onDone,
 }: {
   services: Service[];
   defaultDate: string;
+  prefill?: { name: string; email: string; phone: string };
   onDone: () => void;
 }) {
   const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
   const [date, setDate] = useState(defaultDate);
   const [time, setTime] = useState("10:00");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState(prefill?.name ?? "");
+  const [email, setEmail] = useState(prefill?.email ?? "");
+  const [phone, setPhone] = useState(prefill?.phone ?? "");
   const [notes, setNotes] = useState("");
   const [notify, setNotify] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -1155,6 +1300,7 @@ function TimeOffCard({
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [reason, setReason] = useState("");
+  const [rangeMode, setRangeMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1163,15 +1309,19 @@ function TimeOffCard({
     setStart("");
     setEnd("");
     setReason("");
+    setRangeMode(false);
     setEditingId(null);
     setError(null);
   }
 
   function startEdit(t: TimeOff) {
-    setEditingId(t.id);
-    setStart(dateKey(new Date(t.startDate), tz));
+    const s = dateKey(new Date(t.startDate), tz);
     // stored end is next-midnight; show the last full day
-    setEnd(dateKey(new Date(new Date(t.endDate).getTime() - 1), tz));
+    const e = dateKey(new Date(new Date(t.endDate).getTime() - 1), tz);
+    setEditingId(t.id);
+    setStart(s);
+    setEnd(e);
+    setRangeMode(s !== e);
     setReason(t.reason);
     setError(null);
   }
@@ -1179,10 +1329,10 @@ function TimeOffCard({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!start) {
-      setError("Bitte ein Von-Datum wählen.");
+      setError("Bitte ein Datum wählen.");
       return;
     }
-    const finalEnd = end || start;
+    const finalEnd = rangeMode && end ? end : start;
     if (finalEnd < start) {
       setError("Bis-Datum muss am/nach dem Von-Datum liegen.");
       return;
@@ -1270,19 +1420,36 @@ function TimeOffCard({
         </ul>
       )}
 
-      <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
-        <p className="text-xs font-semibold text-muted sm:col-span-2">
-          {editingId ? "Zeitraum bearbeiten" : "Neuen Zeitraum sperren"}
+      <form onSubmit={submit} className="mt-4 grid gap-3">
+        <p className="text-xs font-semibold text-muted">
+          {editingId ? "Eintrag bearbeiten" : "Tag oder Zeitraum sperren"}
         </p>
         <div className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">Von</span>
-          <DatePicker value={start} onChange={setStart} />
+          <span className="text-muted">{rangeMode ? "Von" : "Datum"}</span>
+          <div className="max-w-[14rem]">
+            <DatePicker value={start} onChange={setStart} />
+          </div>
         </div>
-        <div className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">Bis (optional)</span>
-          <DatePicker value={end} onChange={setEnd} />
-        </div>
-        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+        <label className="flex items-center gap-2 text-sm text-muted">
+          <input
+            type="checkbox"
+            checked={rangeMode}
+            onChange={(e) => {
+              setRangeMode(e.target.checked);
+              if (!e.target.checked) setEnd("");
+            }}
+          />
+          Mehrere Tage (Zeitraum)
+        </label>
+        {rangeMode && (
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-muted">Bis</span>
+            <div className="max-w-[14rem]">
+              <DatePicker value={end} onChange={setEnd} />
+            </div>
+          </div>
+        )}
+        <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Grund (optional)</span>
           <input
             type="text"

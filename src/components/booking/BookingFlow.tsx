@@ -37,8 +37,32 @@ type Step = "service" | "datetime" | "details" | "done";
 
 const tz = siteConfig.timezone;
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-// Left accent bar colors for service cards (subtle, brand-led).
-const ACCENTS = ["bg-brand", "bg-stone-400", "bg-emerald-600", "bg-amber-500"];
+// Per-service color themes — each service gets its own colour, threaded through
+// the calendar selection and time slots so the booking isn't monotone.
+const SERVICE_THEMES = [
+  { bar: "bg-brand", solid: "bg-brand", ring: "ring-brand", hover: "hover:ring-brand" },
+  {
+    bar: "bg-blue-900",
+    solid: "bg-blue-900",
+    ring: "ring-blue-900",
+    hover: "hover:ring-blue-900",
+  },
+  {
+    bar: "bg-emerald-700",
+    solid: "bg-emerald-700",
+    ring: "ring-emerald-700",
+    hover: "hover:ring-emerald-700",
+  },
+  {
+    bar: "bg-amber-600",
+    solid: "bg-amber-600",
+    ring: "ring-amber-600",
+    hover: "hover:ring-amber-600",
+  },
+];
+function themeFor(i: number) {
+  return SERVICE_THEMES[i % SERVICE_THEMES.length];
+}
 
 export default function BookingFlow({ services }: { services: Service[] }) {
   const [step, setStep] = useState<Step>("service");
@@ -155,7 +179,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
               className="flex items-center overflow-hidden rounded-2xl bg-background shadow-sm ring-1 ring-line"
             >
               <span
-                className={`h-full w-1.5 self-stretch ${ACCENTS[i % ACCENTS.length]}`}
+                className={`h-full w-1.5 self-stretch ${themeFor(i).bar}`}
                 aria-hidden
               />
               <div className="flex flex-1 items-center justify-between gap-3 px-4 py-3.5">
@@ -183,6 +207,14 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   }
 
   // --- Steps with a service header ---
+  const serviceIndex = service
+    ? Math.max(
+        0,
+        services.findIndex((s) => s.id === service.id),
+      )
+    : 0;
+  const theme = themeFor(serviceIndex);
+
   return (
     <div className="mx-auto w-full max-w-2xl">
       {service && (
@@ -206,7 +238,12 @@ export default function BookingFlow({ services }: { services: Service[] }) {
 
       {step === "datetime" && service && (
         <div className="mt-6">
-          <Calendar serviceId={service.id} value={date} onChange={setDate} />
+          <Calendar
+            serviceId={service.id}
+            value={date}
+            onChange={setDate}
+            accent={theme.solid}
+          />
 
           {date && (
             <div className="mt-6 rounded-2xl bg-background p-5 shadow-sm ring-1 ring-line">
@@ -227,8 +264,8 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                         onClick={() => setSlot(s)}
                         className={`rounded-xl px-4 py-4 text-lg font-semibold shadow-sm ring-1 transition-colors ${
                           active
-                            ? "bg-brand text-white ring-brand"
-                            : "bg-background ring-line hover:ring-brand"
+                            ? `${theme.solid} text-white ${theme.ring}`
+                            : `bg-background ring-line ${theme.hover}`
                         }`}
                       >
                         {formatClock(new Date(s.start), tz)}
@@ -364,10 +401,12 @@ function Calendar({
   serviceId,
   value,
   onChange,
+  accent,
 }: {
   serviceId: string;
   value: string | null;
   onChange: (date: string) => void;
+  accent: string;
 }) {
   const initial = useMemo(() => {
     const today = todayInTz(tz);
@@ -465,7 +504,7 @@ function Calendar({
               onClick={() => onChange(dateStr)}
               className={`aspect-square rounded-lg text-sm transition-colors ${
                 selected
-                  ? "bg-brand font-bold text-white"
+                  ? `${accent} font-bold text-white`
                   : enabled
                     ? "font-semibold text-foreground hover:bg-surface"
                     : "text-stone-300 line-through"
