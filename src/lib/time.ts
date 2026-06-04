@@ -56,6 +56,21 @@ export function formatDateLabel(date: Date, tz: string): string {
   return formatInTimeZone(date, tz, "EE, dd.MM.yyyy", LOCALE);
 }
 
+/** Long date label, e.g. "Donnerstag, 4. Juni 2026". */
+export function formatLongDate(date: Date, tz: string): string {
+  return formatInTimeZone(date, tz, "EEEE, d. MMMM yyyy", LOCALE);
+}
+
+/** Long date label from a "YYYY-MM-DD" string (timezone-independent). */
+export function longDateFromStr(dateStr: string): string {
+  return formatInTimeZone(
+    new Date(`${dateStr}T12:00:00Z`),
+    "UTC",
+    "EEEE, d. MMMM yyyy",
+    LOCALE,
+  );
+}
+
 /** Today's calendar date ("YYYY-MM-DD") in the shop timezone. */
 export function todayInTz(tz: string): string {
   return formatInTimeZone(new Date(), tz, "yyyy-MM-dd");

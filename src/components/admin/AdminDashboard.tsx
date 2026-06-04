@@ -7,15 +7,12 @@ import { priceShort, priceFull } from "@/lib/format";
 import { googleCalUrl } from "@/lib/gcal";
 import DatePicker from "./DatePicker";
 import {
+  addDaysToDateStr,
   dateKey,
-  daysInMonth,
-  firstWeekdayMondayFirst,
   formatClock,
   formatDateLabel,
-  formatDateTimeLabel,
+  longDateFromStr,
   minutesToHHMM,
-  monthLabel,
-  toDateStr,
   todayInTz,
   weekdayOf,
   zonedToUtc,
@@ -212,14 +209,8 @@ function TermineTab({
   siteName: string;
   onChange: () => void;
 }) {
-  const initial = useMemo(() => {
-    const today = todayInTz(tz);
-    const [y, m] = today.split("-").map(Number);
-    return { year: y, month0: m - 1, today };
-  }, []);
-  const [year, setYear] = useState(initial.year);
-  const [month0, setMonth0] = useState(initial.month0);
-  const [selected, setSelected] = useState<string>(initial.today);
+  const today = useMemo(() => todayInTz(tz), []);
+  const [selected, setSelected] = useState<string>(today);
   const [showForm, setShowForm] = useState(false);
 
   const byDay = useMemo(() => {
@@ -257,76 +248,39 @@ function TermineTab({
     return closedWeekdays.has(weekdayOf(ds));
   }
 
-  // Mini stats.
+  // The Monday-first week containing the selected day.
+  const weekDays = useMemo(() => {
+    const offset = (weekdayOf(selected) + 6) % 7;
+    const monday = addDaysToDateStr(selected, -offset);
+    return Array.from({ length: 7 }, (_, i) => addDaysToDateStr(monday, i));
+  }, [selected]);
+
   const stats = useMemo(() => {
     const active = appointments.filter((a) => a.status !== "CANCELLED");
-    const todayCount = (byDay.get(initial.today) ?? []).filter(
+    const todayCount = (byDay.get(today) ?? []).filter(
       (a) => a.status !== "CANCELLED",
     ).length;
-    const weekStart = zonedToUtc(initial.today, 0, tz).getTime();
+    const weekStart = zonedToUtc(weekDays[0], 0, tz).getTime();
     const weekEnd = weekStart + 7 * 24 * 60 * 60_000;
     const weekCount = active.filter((a) => {
       const t = new Date(a.start).getTime();
       return t >= weekStart && t < weekEnd;
     }).length;
-    const now = Date.now();
-    const next = active
-      .filter((a) => new Date(a.start).getTime() >= now)
-      .sort((a, b) => a.start.localeCompare(b.start))[0];
-    return { todayCount, weekCount, next };
-  }, [appointments, byDay, initial.today]);
-
-  function shiftMonth(delta: number) {
-    let m = month0 + delta;
-    let y = year;
-    if (m < 0) {
-      m = 11;
-      y -= 1;
-    } else if (m > 11) {
-      m = 0;
-      y += 1;
-    }
-    setYear(y);
-    setMonth0(m);
-  }
-
-  const total = daysInMonth(year, month0);
-  const lead = firstWeekdayMondayFirst(year, month0);
-  const cells: (number | null)[] = [
-    ...Array(lead).fill(null),
-    ...Array.from({ length: total }, (_, i) => i + 1),
-  ];
+    return { todayCount, weekCount };
+  }, [appointments, byDay, today, weekDays]);
 
   const selectedList = byDay.get(selected) ?? [];
   const selectedOff = offReason(selected);
   const selectedClosed = isClosedDay(selected);
 
   return (
-    <div className="mt-6 flex flex-col gap-6">
-      {/* Mini overview */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Heute" value={`${stats.todayCount}`} sub="Termine" />
-        <StatCard label="Diese Woche" value={`${stats.weekCount}`} sub="Termine" />
-        <StatCard
-          label="Nächster"
-          value={
-            stats.next ? formatClock(new Date(stats.next.start), tz) : "—"
-          }
-          sub={
-            stats.next
-              ? formatDateLabel(new Date(stats.next.start), tz).replace(
-                  /,.*/,
-                  "",
-                ) +
-                " · " +
-                stats.next.serviceName
-              : "kein Termin"
-          }
-        />
-      </div>
-
+    <div className="mt-6 flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-muted">Terminkalender</h2>
+        <p className="text-sm text-muted">
+          Heute <span className="font-bold text-brand">{stats.todayCount}</span> ·
+          Diese Woche{" "}
+          <span className="font-bold text-brand">{stats.weekCount}</span>
+        </p>
         <button
           onClick={() => setShowForm((v) => !v)}
           className="rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background"
@@ -346,119 +300,114 @@ function TermineTab({
         />
       )}
 
-      {/* Calendar */}
-      <div className="rounded-2xl border border-line bg-background p-5 shadow-sm">
-        <div className="flex items-center justify-between">
+      {/* Day header + week strip */}
+      <div className="rounded-2xl border border-line bg-background shadow-sm">
+        <div className="flex items-center justify-between border-b border-line px-3 py-3">
           <button
-            onClick={() => shiftMonth(-1)}
-            aria-label="Vorheriger Monat"
-            className="flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-line hover:ring-brand"
+            onClick={() => setSelected(addDaysToDateStr(selected, -7))}
+            aria-label="Vorherige Woche"
+            className="flex h-8 w-8 items-center justify-center rounded-full ring-1 ring-line hover:ring-brand"
           >
             ‹
           </button>
-          <p className="text-base font-bold">{monthLabel(year, month0)}</p>
+          <p className="text-center text-sm font-bold sm:text-base">
+            {longDateFromStr(selected)}
+          </p>
           <button
-            onClick={() => shiftMonth(1)}
-            aria-label="Nächster Monat"
-            className="flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-line hover:ring-brand"
+            onClick={() => setSelected(addDaysToDateStr(selected, 7))}
+            aria-label="Nächste Woche"
+            className="flex h-8 w-8 items-center justify-center rounded-full ring-1 ring-line hover:ring-brand"
           >
             ›
           </button>
         </div>
-
-        <div className="mt-4 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted">
-          {WEEKDAYS_SHORT.map((w) => (
-            <div key={w} className="py-1">
-              {w}
-            </div>
-          ))}
-        </div>
-        <div className="mt-1 grid grid-cols-7 gap-1">
-          {cells.map((day, idx) => {
-            if (day === null) return <div key={`b${idx}`} />;
-            const ds = toDateStr(year, month0, day);
-            const list = byDay.get(ds) ?? [];
-            const active = list.filter((a) => a.status !== "CANCELLED").length;
+        <div className="grid grid-cols-7 gap-1 p-2">
+          {weekDays.map((ds, i) => {
+            const isToday = ds === today;
+            const isSel = ds === selected;
+            const active = (byDay.get(ds) ?? []).filter(
+              (a) => a.status !== "CANCELLED",
+            ).length;
             const off = offReason(ds);
             const closed = isClosedDay(ds);
-            const isToday = ds === initial.today;
-            const isSelected = ds === selected;
             return (
               <button
                 key={ds}
                 onClick={() => setSelected(ds)}
-                title={off ? `Gesperrt: ${off}` : closed ? "Geschlossen" : undefined}
-                className={`relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm transition-colors ${
-                  isSelected
-                    ? "bg-brand text-white"
-                    : off
-                      ? "bg-brand-soft hover:bg-brand-soft"
-                      : closed
-                        ? "text-stone-300"
-                        : isToday
-                          ? "ring-1 ring-brand/40 hover:bg-surface"
-                          : "hover:bg-surface"
-                }`}
+                title={
+                  off ? `Gesperrt: ${off}` : closed ? "Geschlossen" : undefined
+                }
+                className="flex flex-col items-center gap-1 rounded-xl py-1.5"
               >
-                <span className={active ? "font-bold" : "font-medium"}>{day}</span>
-                {active > 0 ? (
-                  <span
-                    className={`mt-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                      isSelected ? "bg-white text-brand" : "bg-brand text-white"
-                    }`}
-                  >
-                    {active}
-                  </span>
-                ) : off && !isSelected ? (
-                  <span className="mt-0.5 text-[9px] font-semibold uppercase text-brand">
-                    frei
-                  </span>
-                ) : null}
+                <span
+                  className={`text-[11px] font-semibold ${
+                    isToday ? "text-red-500" : isSel ? "text-brand" : "text-muted"
+                  }`}
+                >
+                  {WEEKDAYS_SHORT[i]}
+                </span>
+                <span
+                  className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-colors ${
+                    isToday
+                      ? "bg-red-500 text-white"
+                      : isSel
+                        ? "bg-brand text-white"
+                        : off
+                          ? "bg-brand-soft text-brand-700"
+                          : closed
+                            ? "text-stone-300"
+                            : "hover:bg-surface"
+                  }`}
+                >
+                  {Number(ds.slice(8))}
+                </span>
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    active > 0
+                      ? isToday
+                        ? "bg-red-500"
+                        : "bg-brand"
+                      : "bg-transparent"
+                  }`}
+                />
               </button>
             );
           })}
         </div>
-        <div className="mt-3 flex flex-wrap gap-3 border-t border-line pt-3 text-[11px] text-muted">
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded-full bg-brand" /> Termine
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded bg-brand-soft ring-1 ring-brand/20" />{" "}
-            Urlaub / gesperrt
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded bg-stone-100 text-stone-300" />{" "}
-            geschlossen
-          </span>
-        </div>
       </div>
 
-      {/* Selected day */}
+      {(selectedOff || selectedClosed) && (
+        <p className="rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand-700">
+          {selectedOff
+            ? `Gesperrt${selectedOff !== "Gesperrt" ? ` · ${selectedOff}` : ""} – keine Online-Buchungen.`
+            : "Ruhetag (geschlossen) – keine Online-Buchungen."}
+        </p>
+      )}
+
+      {selectedList.length === 0 ? (
+        <p className="rounded-2xl bg-surface px-4 py-6 text-center text-sm text-muted">
+          Keine Termine an diesem Tag.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2.5">
+          {selectedList.map((a) => (
+            <AgendaCard
+              key={a.id}
+              appt={a}
+              siteName={siteName}
+              onChange={onChange}
+            />
+          ))}
+        </ul>
+      )}
+
       <div>
-        <h3 className="text-sm font-semibold">
-          {formatDateLabel(new Date(`${selected}T12:00:00Z`), "UTC")}
-        </h3>
-        {(selectedOff || selectedClosed) && (
-          <p className="mt-2 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand-700">
-            {selectedOff
-              ? `Gesperrt${selectedOff !== "Gesperrt" ? ` · ${selectedOff}` : ""} – keine Online-Buchungen.`
-              : "Ruhetag (geschlossen) – keine Online-Buchungen."}
-          </p>
-        )}
-        {selectedList.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">Keine Termine an diesem Tag.</p>
-        ) : (
-          <ul className="mt-3 flex flex-col gap-3">
-            {selectedList.map((a) => (
-              <AppointmentCard
-                key={a.id}
-                appt={a}
-                siteName={siteName}
-                onChange={onChange}
-              />
-            ))}
-          </ul>
-        )}
+        <button
+          onClick={() => setSelected(today)}
+          className="rounded-full bg-surface px-5 py-2.5 text-sm font-bold ring-1 ring-line hover:ring-brand"
+        >
+          Heute
+        </button>
       </div>
 
       {feedUrl && <FeedBox feedUrl={feedUrl} />}
@@ -466,27 +415,7 @@ function TermineTab({
   );
 }
 
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-line bg-background p-4 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-bold text-brand">{value}</p>
-      <p className="truncate text-xs text-muted">{sub}</p>
-    </div>
-  );
-}
-
-function AppointmentCard({
+function AgendaCard({
   appt: a,
   siteName,
   onChange,
@@ -495,7 +424,14 @@ function AppointmentCard({
   siteName: string;
   onChange: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const cancelled = a.status === "CANCELLED";
+  const bar = cancelled
+    ? "bg-stone-300"
+    : a.serviceName.toLowerCase().includes("bart")
+      ? "bg-blue-900"
+      : "bg-brand";
 
   async function setStatus(status: string) {
     setBusy(true);
@@ -523,87 +459,103 @@ function AppointmentCard({
   });
 
   return (
-    <li className="rounded-2xl border border-line bg-background p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold">
-            {formatClock(new Date(a.start), tz)}–{formatClock(new Date(a.end), tz)}
-            <span className="ml-2 font-normal text-muted">{a.serviceName}</span>
+    <li className="overflow-hidden rounded-2xl border border-line bg-background shadow-sm">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-stretch text-left"
+      >
+        <span className={`w-1.5 shrink-0 ${bar}`} aria-hidden />
+        <span className="flex flex-1 items-center justify-between gap-3 px-4 py-3">
+          <span className="min-w-0">
             <span
-              className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusStyle(
-                a.status,
-              )}`}
+              className={`block font-semibold ${cancelled ? "text-muted line-through" : ""}`}
             >
-              {STATUS_LABEL[a.status] ?? a.status.toLowerCase()}
+              {a.serviceName}
             </span>
-          </p>
-          <p className="mt-1 text-sm">
+            <span className="mt-0.5 block text-sm text-muted">
+              {formatClock(new Date(a.start), tz)} –{" "}
+              {formatClock(new Date(a.end), tz)}
+            </span>
+          </span>
+          <span className="shrink-0 text-right text-sm font-semibold">
             {a.customerName}
-            {a.customerPhone && (
-              <>
-                {" · "}
-                <a className="underline" href={`tel:${a.customerPhone}`}>
-                  {a.customerPhone}
-                </a>
-              </>
+            {a.status !== "CONFIRMED" && (
+              <span
+                className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle(
+                  a.status,
+                )}`}
+              >
+                {STATUS_LABEL[a.status] ?? a.status.toLowerCase()}
+              </span>
             )}
+          </span>
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-line px-4 py-3 text-sm">
+          <p>
+            {a.customerPhone && (
+              <a className="underline" href={`tel:${a.customerPhone}`}>
+                {a.customerPhone}
+              </a>
+            )}
+            {a.customerPhone && a.customerEmail ? " · " : ""}
             {a.customerEmail && (
-              <>
-                {" · "}
-                <a className="underline" href={`mailto:${a.customerEmail}`}>
-                  {a.customerEmail}
-                </a>
-              </>
+              <a className="underline" href={`mailto:${a.customerEmail}`}>
+                {a.customerEmail}
+              </a>
+            )}
+            {!a.customerPhone && !a.customerEmail && (
+              <span className="text-muted">Keine Kontaktdaten</span>
             )}
           </p>
-          {a.notes && <p className="mt-1 text-sm text-muted">Notiz: {a.notes}</p>}
+          {a.notes && <p className="mt-1 text-muted">Notiz: {a.notes}</p>}
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            {a.status !== "CANCELLED" && (
+              <button
+                disabled={busy}
+                onClick={() => setStatus("CANCELLED")}
+                className="rounded-lg border border-line px-3 py-1.5 hover:border-red-400 hover:text-red-600 disabled:opacity-50"
+              >
+                Stornieren
+              </button>
+            )}
+            {a.status !== "COMPLETED" && a.status !== "CANCELLED" && (
+              <button
+                disabled={busy}
+                onClick={() => setStatus("COMPLETED")}
+                className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground disabled:opacity-50"
+              >
+                Erledigt
+              </button>
+            )}
+            {a.status === "CANCELLED" && (
+              <button
+                disabled={busy}
+                onClick={() => setStatus("CONFIRMED")}
+                className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground disabled:opacity-50"
+              >
+                Wiederherstellen
+              </button>
+            )}
+            <span className="mx-1 text-line">|</span>
+            <a
+              href={gcal}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand"
+            >
+              Google Kalender
+            </a>
+            <a
+              href={`/api/appointments/${a.id}/ics`}
+              className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand"
+            >
+              .ics
+            </a>
+          </div>
         </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-        {a.status !== "CANCELLED" && (
-          <button
-            disabled={busy}
-            onClick={() => setStatus("CANCELLED")}
-            className="rounded-lg border border-line px-3 py-1.5 hover:border-red-400 hover:text-red-600 disabled:opacity-50"
-          >
-            Stornieren
-          </button>
-        )}
-        {a.status !== "COMPLETED" && a.status !== "CANCELLED" && (
-          <button
-            disabled={busy}
-            onClick={() => setStatus("COMPLETED")}
-            className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground disabled:opacity-50"
-          >
-            Erledigt
-          </button>
-        )}
-        {a.status === "CANCELLED" && (
-          <button
-            disabled={busy}
-            onClick={() => setStatus("CONFIRMED")}
-            className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground disabled:opacity-50"
-          >
-            Wiederherstellen
-          </button>
-        )}
-        <span className="mx-1 text-line">|</span>
-        <a
-          href={gcal}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand"
-        >
-          Google Kalender
-        </a>
-        <a
-          href={`/api/appointments/${a.id}/ics`}
-          className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand"
-        >
-          .ics
-        </a>
-      </div>
+      )}
     </li>
   );
 }
@@ -671,7 +623,10 @@ function KundenTab({
 }) {
   const [customers, setCustomers] = useState<CustomerStat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [schedulingFor, setSchedulingFor] = useState<CustomerStat | null>(null);
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [schedulingFor, setSchedulingFor] = useState<string | null>(null);
+  const [newAppt, setNewAppt] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -690,98 +645,151 @@ function KundenTab({
     };
   }, []);
 
+  const q = query.toLowerCase().trim();
+  const filtered = q
+    ? customers.filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.email.toLowerCase().includes(q),
+      )
+    : customers;
+
   return (
     <div className="mt-6 flex flex-col gap-4">
-      {schedulingFor && (
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold tracking-tight">Kunden</h2>
+        <button
+          onClick={() => setNewAppt((v) => !v)}
+          aria-label="Neuer Termin"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-lg ring-1 ring-line hover:ring-brand"
+        >
+          +
+        </button>
+      </div>
+
+      {newAppt && (
         <div className="rounded-2xl border border-brand/30 bg-brand-soft/40 p-4">
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm">
-              Termin für <span className="font-semibold">{schedulingFor.name}</span>{" "}
-              eintragen
-            </p>
+            <p className="text-sm font-semibold">Neuer Termin</p>
             <button
-              onClick={() => setSchedulingFor(null)}
+              onClick={() => setNewAppt(false)}
               className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
             >
               Abbrechen
             </button>
           </div>
           <ScheduleForm
-            key={schedulingFor.email || schedulingFor.name}
             services={services}
             defaultDate={todayInTz(tz)}
-            prefill={{
-              name: schedulingFor.name,
-              email: schedulingFor.email,
-              phone: schedulingFor.phone,
-            }}
             onDone={() => {
-              setSchedulingFor(null);
+              setNewAppt(false);
               onChange();
             }}
           />
         </div>
       )}
 
-      <h2 className="text-sm font-semibold text-muted">
-        Kunden ({customers.length})
-      </h2>
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Suche Name, E-Mail…"
+        className="w-full rounded-full border border-line bg-surface px-5 py-2.5 text-sm outline-none focus:border-brand"
+      />
 
       {loading ? (
         <p className="text-sm text-muted">Lädt…</p>
-      ) : customers.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <p className="rounded-lg bg-surface px-3 py-3 text-sm text-muted">
-          Noch keine Kunden – sobald jemand bucht, erscheint er hier.
+          {query ? "Keine Treffer." : "Noch keine Kunden – sobald jemand bucht, erscheint er hier."}
         </p>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {customers.map((c) => (
-            <li
-              key={`${c.name}|${c.email}`}
-              className="rounded-2xl border border-line bg-background p-4 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold">{c.name}</p>
-                  <p className="mt-0.5 truncate text-sm text-muted">
-                    {c.email && (
-                      <a className="underline" href={`mailto:${c.email}`}>
-                        {c.email}
-                      </a>
-                    )}
-                    {c.email && c.phone ? " · " : ""}
-                    {c.phone && (
-                      <a className="underline" href={`tel:${c.phone}`}>
-                        {c.phone}
-                      </a>
-                    )}
-                  </p>
-                </div>
+        <ul className="overflow-hidden rounded-2xl border border-line bg-background">
+          {filtered.map((c, idx) => {
+            const key = `${c.name}|${c.email}`;
+            const isOpen = expanded === key;
+            return (
+              <li key={key} className={idx > 0 ? "border-t border-line" : ""}>
                 <button
-                  onClick={() => setSchedulingFor(c)}
-                  className="shrink-0 rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background"
+                  onClick={() => {
+                    setExpanded(isOpen ? null : key);
+                    setSchedulingFor(null);
+                  }}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface"
                 >
-                  + Termin eintragen
-                </button>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                <span className="rounded-full bg-brand-soft px-2.5 py-1 font-medium text-brand-700">
-                  {c.appointments} Termine
-                </span>
-                <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
-                  {c.completed} wahrgenommen
-                </span>
-                <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
-                  {priceFull(c.spentCents)} ausgegeben
-                </span>
-                {c.lastStart && (
-                  <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
-                    zuletzt {formatDateLabel(new Date(c.lastStart), tz)}
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-stone-100 text-sm font-bold text-stone-600">
+                    {(c.name.trim()[0] || "?").toUpperCase()}
                   </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-bold">{c.name}</span>
+                    <span className="block truncate text-sm text-muted">
+                      {c.email || c.phone || "—"}
+                    </span>
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="px-4 pb-4">
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full bg-brand-soft px-2.5 py-1 font-medium text-brand-700">
+                        {c.appointments} Termine
+                      </span>
+                      <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
+                        {c.completed} wahrgenommen
+                      </span>
+                      <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
+                        {priceFull(c.spentCents)} ausgegeben
+                      </span>
+                      {c.lastStart && (
+                        <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
+                          zuletzt {formatDateLabel(new Date(c.lastStart), tz)}
+                        </span>
+                      )}
+                    </div>
+                    {(c.phone || c.email) && (
+                      <div className="mt-2 flex flex-wrap gap-3 text-sm">
+                        {c.phone && (
+                          <a className="underline" href={`tel:${c.phone}`}>
+                            {c.phone}
+                          </a>
+                        )}
+                        {c.email && (
+                          <a className="underline" href={`mailto:${c.email}`}>
+                            {c.email}
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {schedulingFor === key ? (
+                      <div className="mt-3">
+                        <ScheduleForm
+                          key={key}
+                          services={services}
+                          defaultDate={todayInTz(tz)}
+                          prefill={{ name: c.name, email: c.email, phone: c.phone }}
+                          onDone={() => {
+                            setSchedulingFor(null);
+                            onChange();
+                          }}
+                        />
+                        <button
+                          onClick={() => setSchedulingFor(null)}
+                          className="mt-2 text-sm text-muted underline underline-offset-4 hover:text-foreground"
+                        >
+                          Abbrechen
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setSchedulingFor(key)}
+                        className="mt-3 rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background"
+                      >
+                        + Termin eintragen
+                      </button>
+                    )}
+                  </div>
                 )}
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

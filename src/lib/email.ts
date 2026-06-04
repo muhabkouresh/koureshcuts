@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 import { siteConfig } from "@/config/site";
-import { formatDateTimeLabel } from "./time";
+import { formatDateTimeLabel, formatClock, formatLongDate } from "./time";
 import { priceFull } from "./format";
 import { buildIcs, googleCalendarUrl, type CalendarEvent } from "./calendar";
 import { cancelUrl } from "./token";
@@ -28,7 +28,7 @@ function layout(title: string, bodyHtml: string): string {
   <div style="max-width:520px;margin:0 auto;padding:32px 20px">
     <div style="background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:32px">
       <h1 style="margin:0 0 8px;font-size:20px;letter-spacing:-0.01em">${siteConfig.name}</h1>
-      <h2 style="margin:0 0 20px;font-size:16px;font-weight:600;color:#444">${title}</h2>
+      ${title ? `<h2 style="margin:0 0 20px;font-size:16px;font-weight:600;color:#444">${title}</h2>` : ""}
       ${bodyHtml}
     </div>
     <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:20px">
@@ -99,15 +99,42 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
     console.error("ics build failed", e);
   }
 
+  const tz = siteConfig.timezone;
+  const durationMin = Math.round(
+    (data.end.getTime() - data.start.getTime()) / 60000,
+  );
+  const rows: [string, string][] = [
+    ["Service", data.serviceName],
+    ["Datum", formatLongDate(data.start, tz)],
+    ["Uhrzeit", `${formatClock(data.start, tz)} – ${formatClock(data.end, tz)}`],
+    ["Dauer", `${durationMin} Min`],
+    ["Preis", priceFull(data.priceCents)],
+    ["Mitarbeiter", siteConfig.name],
+    ["Buchungs-ID", data.id],
+  ];
+  const detailRows = rows
+    .map(
+      ([l, v]) =>
+        `<tr><td style="padding:7px 0;color:#888;font-size:13px;vertical-align:top">${l}</td><td style="padding:7px 0;text-align:right;font-weight:600;font-size:13px;word-break:break-word">${v}</td></tr>`,
+    )
+    .join("");
+
   const customerHtml = layout(
-    "Dein Termin ist gebucht ✂️",
-    `<p style="font-size:14px;color:#444">Hallo ${data.customerName}, danke für deine Buchung. Hier sind deine Details:</p>
-     ${detailsTable(data)}
-     <div style="margin-top:24px">
-       <a href="${gcal}" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600">Zum Google Kalender hinzufügen</a>
-       <a href="${cancelUrl(data.id)}" style="display:inline-block;margin-left:8px;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600">Termin absagen</a>
+    "",
+    `<div style="text-align:center">
+       <div style="width:56px;height:56px;border-radius:50%;background:#1f9d3b;margin:8px auto 18px;line-height:56px;color:#fff;font-size:28px;font-weight:700">&#10003;</div>
+       <h2 style="margin:0;font-size:22px;font-weight:700">Dein Termin wurde bestätigt</h2>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>Vielen Dank. Dein Termin wurde bestätigt.</p>
+       <div style="margin:22px 0 8px">
+         <a href="${cancelUrl(data.id)}" style="display:inline-block;background:#fff;border:1px solid #d6d3d1;color:#18181b;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700">Termin stornieren</a>
+       </div>
+       <div style="margin:0 0 4px">
+         <a href="${gcal}" style="font-size:13px;color:#8a1f2b;text-decoration:underline">Zum Google Kalender hinzufügen</a>
+       </div>
      </div>
-     <p style="font-size:13px;color:#888;margin-top:16px">Eine Kalenderdatei ist angehängt, und wir erinnern dich rechtzeitig. Fragen? Ruf an: ${siteConfig.phone}.</p>`,
+     <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
+     <table style="width:100%;border-collapse:collapse">${detailRows}</table>
+     <p style="font-size:12px;color:#9ca3af;margin-top:18px">Eine Kalenderdatei (.ics) ist angehängt. Fragen? Ruf an: ${siteConfig.phone}.</p>`,
   );
 
   await send({
