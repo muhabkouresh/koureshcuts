@@ -3,7 +3,13 @@ import { prisma } from "./prisma";
 // Editable shop settings (single row).
 
 const SINGLETON = "singleton";
-const DEFAULT_WINDOW_DAYS = 28; // 4 weeks
+const DEFAULT_WINDOW_DAYS = 28;
+
+export type SettingsPatch = {
+  bookingWindowDays?: number;
+  reminderEnabled?: boolean;
+  reminderLeadHours?: number;
+};
 
 export async function getSettings() {
   const existing = await prisma.settings.findUnique({ where: { id: SINGLETON } });
@@ -13,10 +19,11 @@ export async function getSettings() {
   });
 }
 
-export async function setBookingWindowDays(days: number) {
+/** Update any subset of settings (only provided fields are changed). */
+export async function updateSettings(patch: SettingsPatch) {
   return prisma.settings.upsert({
     where: { id: SINGLETON },
-    update: { bookingWindowDays: days },
-    create: { id: SINGLETON, bookingWindowDays: days },
+    update: patch,
+    create: { id: SINGLETON, bookingWindowDays: DEFAULT_WINDOW_DAYS, ...patch },
   });
 }

@@ -46,6 +46,8 @@ export default async function AdminPage() {
   const data = {
     feedUrl,
     bookingWindowDays: settings.bookingWindowDays,
+    reminderEnabled: settings.reminderEnabled,
+    reminderLeadHours: settings.reminderLeadHours,
     services,
     appointments: appointments.map((a) => ({
       id: a.id,

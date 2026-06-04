@@ -3,6 +3,7 @@ import { siteConfig } from "@/config/site";
 import { formatDateTimeLabel } from "./time";
 import { priceFull } from "./format";
 import { buildIcs, googleCalendarUrl, type CalendarEvent } from "./calendar";
+import { cancelUrl } from "./token";
 
 // Email delivery via Resend. When RESEND_API_KEY is unset (local dev), emails
 // are logged to the console instead of being sent, so the flow is testable
@@ -105,7 +106,7 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
      <div style="margin-top:24px">
        <a href="${gcal}" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600">Zum Google Kalender hinzufügen</a>
      </div>
-     <p style="font-size:13px;color:#888;margin-top:16px">Eine Kalenderdatei ist angehängt, und wir erinnern dich am Tag vorher. Termin ändern oder absagen? Antworte auf diese E-Mail oder ruf an: ${siteConfig.phone}.</p>`,
+     <p style="font-size:13px;color:#888;margin-top:16px">Eine Kalenderdatei ist angehängt, und wir erinnern dich rechtzeitig. Termin absagen? <a href="${cancelUrl(data.id)}" style="color:#8a1f2b">Hier stornieren</a>. Oder ruf an: ${siteConfig.phone}.</p>`,
   );
 
   await send({
@@ -136,7 +137,7 @@ export async function sendReminderEmail(data: BookingEmailData): Promise<void> {
     "Termin-Erinnerung",
     `<p style="font-size:14px;color:#444">Hallo ${data.customerName}, das ist eine Erinnerung an deinen Termin morgen:</p>
      ${detailsTable(data)}
-     <p style="font-size:13px;color:#888;margin-top:16px">Bis bald! Termin ändern? Ruf an: ${siteConfig.phone}.</p>`,
+     <p style="font-size:13px;color:#888;margin-top:16px">Bis bald! Termin absagen? <a href="${cancelUrl(data.id)}" style="color:#8a1f2b">Hier stornieren</a>. Oder ruf an: ${siteConfig.phone}.</p>`,
   );
   await send({
     to: data.customerEmail,

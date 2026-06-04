@@ -1,13 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --page: #f3f4f6;
+  --page: #f4f3f2;
   --background: #ffffff;
-  --foreground: #18181b;
-  --muted: #6b7280;
-  --line: #e5e7eb;
+  --foreground: #1c1917;
+  --muted: #78716c;
+  --line: #e7e5e4;
   --accent: #18181b;
-  --surface: #f9fafb;
+  --surface: #faf9f8;
+  /* Brand bordeaux (from the logo), used sparingly as a subtle accent. */
+  --brand: #8a1f2b;
+  --brand-700: #6f1822;
+  --brand-soft: #f7eced;
 }
 
 @theme inline {
@@ -18,6 +22,9 @@
   --color-line: var(--line);
   --color-accent: var(--accent);
   --color-surface: var(--surface);
+  --color-brand: var(--brand);
+  --color-brand-700: var(--brand-700);
+  --color-brand-soft: var(--brand-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-oswald);

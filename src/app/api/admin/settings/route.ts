@@ -1,8 +1,9 @@
 import { isAuthenticated } from "@/lib/auth";
-import { setBookingWindowDays } from "@/lib/settings";
+import { updateSettings } from "@/lib/settings";
 import { settingsSchema } from "@/lib/validation";
 
-// PUT /api/admin/settings — update the public booking window (in weeks).
+// PUT /api/admin/settings — update shop settings (booking window, reminders).
+// Only the provided fields are changed.
 export async function PUT(request: Request) {
   if (!(await isAuthenticated())) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
@@ -18,11 +19,11 @@ export async function PUT(request: Request) {
   const parsed = settingsSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Bitte 1–365 Tage angeben." },
+      { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." },
       { status: 400 },
     );
   }
 
-  await setBookingWindowDays(parsed.data.bookingWindowDays);
+  await updateSettings(parsed.data);
   return Response.json({ ok: true });
 }

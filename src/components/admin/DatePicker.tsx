@@ -143,9 +143,9 @@ export default function DatePicker({
                     }}
                     className={`aspect-square rounded-lg text-sm transition-colors ${
                       selected
-                        ? "bg-foreground font-bold text-background"
+                        ? "bg-brand font-bold text-white"
                         : isToday
-                          ? "ring-1 ring-foreground/30 hover:bg-surface"
+                          ? "ring-1 ring-brand/40 hover:bg-surface"
                           : "hover:bg-surface"
                     }`}
                   >

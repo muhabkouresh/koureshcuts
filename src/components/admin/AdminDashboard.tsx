@@ -12,10 +12,12 @@ import {
   firstWeekdayMondayFirst,
   formatClock,
   formatDateLabel,
+  formatDateTimeLabel,
   minutesToHHMM,
   monthLabel,
   toDateStr,
   todayInTz,
+  weekdayOf,
   zonedToUtc,
 } from "@/lib/time";
 
@@ -58,16 +60,13 @@ type Customer = { name: string; email: string; phone: string };
 type Data = {
   feedUrl: string;
   bookingWindowDays: number;
+  reminderEnabled: boolean;
+  reminderLeadHours: number;
   services: Service[];
   appointments: Appointment[];
   hours: DayHours[];
   timeOff: TimeOff[];
 };
-
-// 24h time options in 15-minute steps ("00:00" … "23:45") for German selects.
-const TIME_OPTIONS: string[] = Array.from({ length: (24 * 60) / 15 }, (_, i) =>
-  minutesToHHMM(i * 15),
-);
 
 const tz = siteConfig.timezone;
 const WEEKDAYS_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -81,6 +80,11 @@ const WEEKDAYS_FULL = [
   "Samstag",
 ];
 const DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+// 24h time options in 15-minute steps ("00:00" … "23:45") for German selects.
+const TIME_OPTIONS: string[] = Array.from({ length: (24 * 60) / 15 }, (_, i) =>
+  minutesToHHMM(i * 15),
+);
 
 const STATUS_LABEL: Record<string, string> = {
   CONFIRMED: "bestätigt",
@@ -103,9 +107,9 @@ function statusStyle(status: string): string {
     case "CANCELLED":
       return "bg-red-50 text-red-700";
     case "COMPLETED":
-      return "bg-zinc-100 text-zinc-600";
+      return "bg-stone-100 text-stone-600";
     default:
-      return "bg-zinc-100 text-zinc-600";
+      return "bg-stone-100 text-stone-600";
   }
 }
 
@@ -129,7 +133,7 @@ export default function AdminDashboard({
     <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-10">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">
-          {siteName} · Admin
+          {siteName} <span className="text-brand">· Admin</span>
         </h1>
         <button
           onClick={logout}
@@ -142,18 +146,18 @@ export default function AdminDashboard({
       <div className="mt-6 inline-flex rounded-full border border-line bg-background p-1 text-sm">
         <button
           onClick={() => setTab("termine")}
-          className={`rounded-full px-4 py-1.5 ${
-            tab === "termine" ? "bg-foreground text-background" : "text-muted"
+          className={`rounded-full px-4 py-1.5 transition-colors ${
+            tab === "termine" ? "bg-brand text-white" : "text-muted hover:text-foreground"
           }`}
         >
           Termine
         </button>
         <button
           onClick={() => setTab("verfuegbarkeit")}
-          className={`rounded-full px-4 py-1.5 ${
+          className={`rounded-full px-4 py-1.5 transition-colors ${
             tab === "verfuegbarkeit"
-              ? "bg-foreground text-background"
-              : "text-muted"
+              ? "bg-brand text-white"
+              : "text-muted hover:text-foreground"
           }`}
         >
           Verfügbarkeit
@@ -164,6 +168,8 @@ export default function AdminDashboard({
         <TermineTab
           appointments={data.appointments}
           services={data.services}
+          hours={data.hours}
+          timeOff={data.timeOff}
           feedUrl={data.feedUrl}
           siteName={siteName}
           onChange={() => router.refresh()}
@@ -173,6 +179,8 @@ export default function AdminDashboard({
           hours={data.hours}
           timeOff={data.timeOff}
           bookingWindowDays={data.bookingWindowDays}
+          reminderEnabled={data.reminderEnabled}
+          reminderLeadHours={data.reminderLeadHours}
           onChange={() => router.refresh()}
         />
       )}
@@ -185,12 +193,16 @@ export default function AdminDashboard({
 function TermineTab({
   appointments,
   services,
+  hours,
+  timeOff,
   feedUrl,
   siteName,
   onChange,
 }: {
   appointments: Appointment[];
   services: Service[];
+  hours: DayHours[];
+  timeOff: TimeOff[];
   feedUrl: string;
   siteName: string;
   onChange: () => void;
@@ -205,7 +217,6 @@ function TermineTab({
   const [selected, setSelected] = useState<string>(initial.today);
   const [showForm, setShowForm] = useState(false);
 
-  // Group appointments by local calendar day.
   const byDay = useMemo(() => {
     const map = new Map<string, Appointment[]>();
     for (const a of appointments) {
@@ -214,11 +225,51 @@ function TermineTab({
       list.push(a);
       map.set(key, list);
     }
-    for (const list of map.values()) {
-      list.sort((a, b) => a.start.localeCompare(b.start));
-    }
+    for (const list of map.values()) list.sort((a, b) => a.start.localeCompare(b.start));
     return map;
   }, [appointments]);
+
+  const closedWeekdays = useMemo(
+    () => new Set(hours.filter((h) => h.isClosed).map((h) => h.dayOfWeek)),
+    [hours],
+  );
+  const offRanges = useMemo(
+    () =>
+      timeOff.map((t) => ({
+        start: new Date(t.startDate).getTime(),
+        end: new Date(t.endDate).getTime(),
+        reason: t.reason,
+      })),
+    [timeOff],
+  );
+
+  function offReason(ds: string): string | null {
+    const dayStart = zonedToUtc(ds, 0, tz).getTime();
+    const r = offRanges.find((x) => dayStart >= x.start && dayStart < x.end);
+    return r ? r.reason || "Gesperrt" : null;
+  }
+  function isClosedDay(ds: string): boolean {
+    return closedWeekdays.has(weekdayOf(ds));
+  }
+
+  // Mini stats.
+  const stats = useMemo(() => {
+    const active = appointments.filter((a) => a.status !== "CANCELLED");
+    const todayCount = (byDay.get(initial.today) ?? []).filter(
+      (a) => a.status !== "CANCELLED",
+    ).length;
+    const weekStart = zonedToUtc(initial.today, 0, tz).getTime();
+    const weekEnd = weekStart + 7 * 24 * 60 * 60_000;
+    const weekCount = active.filter((a) => {
+      const t = new Date(a.start).getTime();
+      return t >= weekStart && t < weekEnd;
+    }).length;
+    const now = Date.now();
+    const next = active
+      .filter((a) => new Date(a.start).getTime() >= now)
+      .sort((a, b) => a.start.localeCompare(b.start))[0];
+    return { todayCount, weekCount, next };
+  }, [appointments, byDay, initial.today]);
 
   function shiftMonth(delta: number) {
     let m = month0 + delta;
@@ -242,9 +293,33 @@ function TermineTab({
   ];
 
   const selectedList = byDay.get(selected) ?? [];
+  const selectedOff = offReason(selected);
+  const selectedClosed = isClosedDay(selected);
 
   return (
     <div className="mt-6 flex flex-col gap-6">
+      {/* Mini overview */}
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="Heute" value={`${stats.todayCount}`} sub="Termine" />
+        <StatCard label="Diese Woche" value={`${stats.weekCount}`} sub="Termine" />
+        <StatCard
+          label="Nächster"
+          value={
+            stats.next ? formatClock(new Date(stats.next.start), tz) : "—"
+          }
+          sub={
+            stats.next
+              ? formatDateLabel(new Date(stats.next.start), tz).replace(
+                  /,.*/,
+                  "",
+                ) +
+                " · " +
+                stats.next.serviceName
+              : "kein Termin"
+          }
+        />
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-muted">Terminkalender</h2>
         <button
@@ -272,7 +347,7 @@ function TermineTab({
           <button
             onClick={() => shiftMonth(-1)}
             aria-label="Vorheriger Monat"
-            className="flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-line hover:ring-foreground"
+            className="flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-line hover:ring-brand"
           >
             ‹
           </button>
@@ -280,7 +355,7 @@ function TermineTab({
           <button
             onClick={() => shiftMonth(1)}
             aria-label="Nächster Monat"
-            className="flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-line hover:ring-foreground"
+            className="flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-line hover:ring-brand"
           >
             ›
           </button>
@@ -299,47 +374,74 @@ function TermineTab({
             const ds = toDateStr(year, month0, day);
             const list = byDay.get(ds) ?? [];
             const active = list.filter((a) => a.status !== "CANCELLED").length;
+            const off = offReason(ds);
+            const closed = isClosedDay(ds);
             const isToday = ds === initial.today;
             const isSelected = ds === selected;
             return (
               <button
                 key={ds}
                 onClick={() => setSelected(ds)}
-                className={`flex aspect-square flex-col items-center justify-center rounded-lg text-sm transition-colors ${
+                title={off ? `Gesperrt: ${off}` : closed ? "Geschlossen" : undefined}
+                className={`relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm transition-colors ${
                   isSelected
-                    ? "bg-foreground text-background"
-                    : isToday
-                      ? "bg-surface ring-1 ring-foreground/30"
-                      : "hover:bg-surface"
+                    ? "bg-brand text-white"
+                    : off
+                      ? "bg-brand-soft hover:bg-brand-soft"
+                      : closed
+                        ? "text-stone-300"
+                        : isToday
+                          ? "ring-1 ring-brand/40 hover:bg-surface"
+                          : "hover:bg-surface"
                 }`}
               >
                 <span className={active ? "font-bold" : "font-medium"}>{day}</span>
-                {active > 0 && (
+                {active > 0 ? (
                   <span
                     className={`mt-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                      isSelected
-                        ? "bg-background text-foreground"
-                        : "bg-emerald-600 text-white"
+                      isSelected ? "bg-white text-brand" : "bg-brand text-white"
                     }`}
                   >
                     {active}
                   </span>
-                )}
+                ) : off && !isSelected ? (
+                  <span className="mt-0.5 text-[9px] font-semibold uppercase text-brand">
+                    frei
+                  </span>
+                ) : null}
               </button>
             );
           })}
         </div>
+        <div className="mt-3 flex flex-wrap gap-3 border-t border-line pt-3 text-[11px] text-muted">
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded-full bg-brand" /> Termine
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded bg-brand-soft ring-1 ring-brand/20" />{" "}
+            Urlaub / gesperrt
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded bg-stone-100 text-stone-300" />{" "}
+            geschlossen
+          </span>
+        </div>
       </div>
 
-      {/* Selected day's appointments */}
+      {/* Selected day */}
       <div>
         <h3 className="text-sm font-semibold">
           {formatDateLabel(new Date(`${selected}T12:00:00Z`), "UTC")}
         </h3>
-        {selectedList.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">
-            Keine Termine an diesem Tag.
+        {(selectedOff || selectedClosed) && (
+          <p className="mt-2 rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand-700">
+            {selectedOff
+              ? `Gesperrt${selectedOff !== "Gesperrt" ? ` · ${selectedOff}` : ""} – keine Online-Buchungen.`
+              : "Ruhetag (geschlossen) – keine Online-Buchungen."}
           </p>
+        )}
+        {selectedList.length === 0 ? (
+          <p className="mt-3 text-sm text-muted">Keine Termine an diesem Tag.</p>
         ) : (
           <ul className="mt-3 flex flex-col gap-3">
             {selectedList.map((a) => (
@@ -354,8 +456,27 @@ function TermineTab({
         )}
       </div>
 
-      {/* Calendar subscription */}
       {feedUrl && <FeedBox feedUrl={feedUrl} />}
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-line bg-background p-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-bold text-brand">{value}</p>
+      <p className="truncate text-xs text-muted">{sub}</p>
     </div>
   );
 }
@@ -467,13 +588,13 @@ function AppointmentCard({
           href={gcal}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground"
+          className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand"
         >
           Google Kalender
         </a>
         <a
           href={`/api/appointments/${a.id}/ics`}
-          className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground"
+          className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand"
         >
           .ics
         </a>
@@ -509,13 +630,13 @@ function FeedBox({ feedUrl }: { feedUrl: string }) {
         </code>
         <button
           onClick={copy}
-          className="rounded-lg border border-line px-3 py-2 text-xs hover:border-foreground"
+          className="rounded-lg border border-line px-3 py-2 text-xs hover:border-brand hover:text-brand"
         >
           {copied ? "Kopiert ✓" : "Kopieren"}
         </button>
         <a
           href={webcal}
-          className="rounded-lg bg-foreground px-3 py-2 text-xs font-semibold text-background"
+          className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700"
         >
           Abonnieren
         </a>
@@ -547,7 +668,6 @@ function ScheduleForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load existing customers once when the form mounts.
   useEffect(() => {
     let cancelled = false;
     fetch("/api/admin/customers")
@@ -716,7 +836,7 @@ function ScheduleForm({
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4">
         <button
           type="submit"
           disabled={submitting}
@@ -735,20 +855,45 @@ function Availability({
   hours,
   timeOff,
   bookingWindowDays,
+  reminderEnabled,
+  reminderLeadHours,
   onChange,
 }: {
   hours: DayHours[];
   timeOff: TimeOff[];
   bookingWindowDays: number;
+  reminderEnabled: boolean;
+  reminderLeadHours: number;
   onChange: () => void;
 }) {
-  const [days, setDays] = useState(bookingWindowDays);
-  const [savingWindow, setSavingWindow] = useState(false);
-  const [windowMsg, setWindowMsg] = useState<string | null>(null);
+  return (
+    <div className="mt-6 flex flex-col gap-8">
+      <BookingWindowCard days={bookingWindowDays} onChange={onChange} />
+      <RemindersCard
+        enabled={reminderEnabled}
+        leadHours={reminderLeadHours}
+        onChange={onChange}
+      />
+      <HoursCard hours={hours} onChange={onChange} />
+      <TimeOffCard timeOff={timeOff} onChange={onChange} />
+    </div>
+  );
+}
 
-  async function saveWindow() {
-    setSavingWindow(true);
-    setWindowMsg(null);
+function BookingWindowCard({
+  days: initialDays,
+  onChange,
+}: {
+  days: number;
+  onChange: () => void;
+}) {
+  const [days, setDays] = useState(initialDays);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
     try {
       const res = await fetch("/api/admin/settings", {
         method: "PUT",
@@ -756,15 +901,136 @@ function Availability({
         body: JSON.stringify({ bookingWindowDays: days }),
       });
       const d = await res.json().catch(() => ({}));
-      setWindowMsg(
-        res.ok ? "Gespeichert." : d.error ?? "Konnte nicht gespeichert werden.",
-      );
+      setMsg(res.ok ? "Gespeichert." : d.error ?? "Fehler.");
       if (res.ok) onChange();
     } finally {
-      setSavingWindow(false);
+      setSaving(false);
     }
   }
 
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+      <h2 className="text-sm font-semibold">Buchungszeitraum</h2>
+      <p className="mt-1 text-xs text-muted">
+        Wie viele Tage im Voraus Kunden online buchen können.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        <input
+          type="number"
+          min={1}
+          max={365}
+          value={days}
+          onChange={(e) => setDays(Number(e.target.value))}
+          className="w-20 rounded-lg border border-line bg-background px-3 py-2"
+        />
+        <span className="text-muted">Tage im Voraus</span>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+        >
+          {saving ? "Speichern…" : "Speichern"}
+        </button>
+        {msg && <span className="text-sm text-muted">{msg}</span>}
+      </div>
+    </section>
+  );
+}
+
+function RemindersCard({
+  enabled: initialEnabled,
+  leadHours: initialLead,
+  onChange,
+}: {
+  enabled: boolean;
+  leadHours: number;
+  onChange: () => void;
+}) {
+  const [enabled, setEnabled] = useState(initialEnabled);
+  const [lead, setLead] = useState(initialLead);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const LEAD_OPTIONS = [
+    { v: 2, label: "2 Stunden vorher" },
+    { v: 6, label: "6 Stunden vorher" },
+    { v: 12, label: "12 Stunden vorher" },
+    { v: 24, label: "1 Tag vorher" },
+    { v: 48, label: "2 Tage vorher" },
+  ];
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reminderEnabled: enabled,
+          reminderLeadHours: lead,
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setMsg(res.ok ? "Gespeichert." : d.error ?? "Fehler.");
+      if (res.ok) onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+      <h2 className="text-sm font-semibold">Erinnerungen</h2>
+      <p className="mt-1 text-xs text-muted">
+        Automatische Erinnerungs-E-Mail an Kunden vor dem Termin.
+      </p>
+      <div className="mt-3 flex flex-col gap-3 text-sm">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
+          Erinnerungen senden
+        </label>
+        <label className="flex flex-wrap items-center gap-2">
+          <span className="text-muted">Zeitpunkt:</span>
+          <select
+            value={lead}
+            disabled={!enabled}
+            onChange={(e) => setLead(Number(e.target.value))}
+            className="rounded-lg border border-line bg-background px-3 py-2 disabled:opacity-40"
+          >
+            {LEAD_OPTIONS.map((o) => (
+              <option key={o.v} value={o.v}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+          >
+            {saving ? "Speichern…" : "Speichern"}
+          </button>
+          {msg && <span className="text-sm text-muted">{msg}</span>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HoursCard({
+  hours,
+  onChange,
+}: {
+  hours: DayHours[];
+  onChange: () => void;
+}) {
   const [draft, setDraft] = useState<DayHours[]>(() =>
     DISPLAY_ORDER.map(
       (dow) =>
@@ -776,14 +1042,8 @@ function Availability({
         },
     ),
   );
-  const [savingHours, setSavingHours] = useState(false);
-  const [hoursMsg, setHoursMsg] = useState<string | null>(null);
-
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [reason, setReason] = useState("");
-  const [addingOff, setAddingOff] = useState(false);
-  const [offError, setOffError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
   function updateDay(dow: number, patch: Partial<DayHours>) {
     setDraft((prev) =>
@@ -791,9 +1051,9 @@ function Availability({
     );
   }
 
-  async function saveHours() {
-    setSavingHours(true);
-    setHoursMsg(null);
+  async function save() {
+    setSaving(true);
+    setMsg(null);
     try {
       const res = await fetch("/api/admin/hours", {
         method: "PUT",
@@ -801,228 +1061,263 @@ function Availability({
         body: JSON.stringify({ hours: draft }),
       });
       const d = await res.json().catch(() => ({}));
-      setHoursMsg(
-        res.ok ? "Gespeichert." : d.error ?? "Konnte nicht gespeichert werden.",
-      );
+      setMsg(res.ok ? "Gespeichert." : d.error ?? "Fehler.");
       if (res.ok) onChange();
     } finally {
-      setSavingHours(false);
+      setSaving(false);
     }
   }
 
-  async function addTimeOff(e: React.FormEvent) {
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+      <h2 className="text-sm font-semibold">Öffnungszeiten</h2>
+      <p className="mt-1 text-xs text-muted">
+        Uhrzeiten im 24-Stunden-Format (z. B. 09:00–18:00).
+      </p>
+      <div className="mt-4 divide-y divide-line">
+        {draft.map((d) => (
+          <div
+            key={d.dayOfWeek}
+            className="flex flex-wrap items-center gap-3 py-2.5 text-sm"
+          >
+            <span className="w-24 font-medium">{WEEKDAYS_FULL[d.dayOfWeek]}</span>
+            <button
+              type="button"
+              onClick={() => updateDay(d.dayOfWeek, { isClosed: !d.isClosed })}
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                d.isClosed
+                  ? "bg-stone-100 text-stone-500"
+                  : "bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {d.isClosed ? "Geschlossen" : "Geöffnet"}
+            </button>
+            {!d.isClosed && (
+              <div className="flex items-center gap-2">
+                <select
+                  value={minutesToHHMM(d.openMinute)}
+                  onChange={(e) =>
+                    updateDay(d.dayOfWeek, {
+                      openMinute: hhmmToMinutes(e.target.value),
+                    })
+                  }
+                  className="rounded-lg border border-line bg-background px-2 py-1 tabular-nums"
+                >
+                  {TIME_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-muted">bis</span>
+                <select
+                  value={minutesToHHMM(d.closeMinute)}
+                  onChange={(e) =>
+                    updateDay(d.dayOfWeek, {
+                      closeMinute: hhmmToMinutes(e.target.value),
+                    })
+                  }
+                  className="rounded-lg border border-line bg-background px-2 py-1 tabular-nums"
+                >
+                  {TIME_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-muted">Uhr</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+        >
+          {saving ? "Speichern…" : "Zeiten speichern"}
+        </button>
+        {msg && <span className="text-sm text-muted">{msg}</span>}
+      </div>
+    </section>
+  );
+}
+
+function TimeOffCard({
+  timeOff,
+  onChange,
+}: {
+  timeOff: TimeOff[];
+  onChange: () => void;
+}) {
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [reason, setReason] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function resetForm() {
+    setStart("");
+    setEnd("");
+    setReason("");
+    setEditingId(null);
+    setError(null);
+  }
+
+  function startEdit(t: TimeOff) {
+    setEditingId(t.id);
+    setStart(dateKey(new Date(t.startDate), tz));
+    // stored end is next-midnight; show the last full day
+    setEnd(dateKey(new Date(new Date(t.endDate).getTime() - 1), tz));
+    setReason(t.reason);
+    setError(null);
+  }
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!start) {
-      setOffError("Bitte ein Von-Datum wählen.");
+      setError("Bitte ein Von-Datum wählen.");
       return;
     }
-    const finalEnd = end || start; // single day if no Bis chosen
+    const finalEnd = end || start;
     if (finalEnd < start) {
-      setOffError("Bis-Datum muss am/nach dem Von-Datum liegen.");
+      setError("Bis-Datum muss am/nach dem Von-Datum liegen.");
       return;
     }
-    setAddingOff(true);
-    setOffError(null);
+    setSaving(true);
+    setError(null);
     try {
-      const res = await fetch("/api/admin/timeoff", {
-        method: "POST",
+      const url = editingId
+        ? `/api/admin/timeoff/${editingId}`
+        : "/api/admin/timeoff";
+      const res = await fetch(url, {
+        method: editingId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ startDate: start, endDate: finalEnd, reason }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setOffError(d.error ?? "Konnte nicht hinzugefügt werden.");
+        setError(d.error ?? "Konnte nicht gespeichert werden.");
         return;
       }
-      setStart("");
-      setEnd("");
-      setReason("");
+      resetForm();
       onChange();
     } finally {
-      setAddingOff(false);
+      setSaving(false);
     }
   }
 
-  async function removeTimeOff(id: string) {
+  async function remove(id: string) {
     await fetch(`/api/admin/timeoff/${id}`, { method: "DELETE" });
+    if (editingId === id) resetForm();
     onChange();
   }
 
   return (
-    <div className="mt-6 flex flex-col gap-8">
-      {/* Booking window */}
-      <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
-        <h2 className="text-sm font-semibold">Buchungszeitraum</h2>
-        <p className="mt-1 text-xs text-muted">
-          Wie viele Tage im Voraus Kunden online buchen können.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-          <input
-            type="number"
-            min={1}
-            max={365}
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="w-20 rounded-lg border border-line bg-background px-3 py-2"
-          />
-          <span className="text-muted">Tage im Voraus</span>
-          <button
-            onClick={saveWindow}
-            disabled={savingWindow}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
-          >
-            {savingWindow ? "Speichern…" : "Speichern"}
-          </button>
-          {windowMsg && <span className="text-sm text-muted">{windowMsg}</span>}
-        </div>
-      </section>
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+      <h2 className="text-sm font-semibold">Freie Tage / Urlaub</h2>
+      <p className="mt-1 text-xs text-muted">
+        Sperre einen einzelnen Tag (nur „Von") oder einen Zeitraum. An gesperrten
+        Tagen sind keine Buchungen möglich.
+      </p>
 
-      {/* Weekly hours */}
-      <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
-        <h2 className="text-sm font-semibold">Öffnungszeiten</h2>
-        <p className="mt-1 text-xs text-muted">
-          Uhrzeiten im 24-Stunden-Format (z. B. 09:00–18:00).
+      {timeOff.length === 0 ? (
+        <p className="mt-4 rounded-lg bg-surface px-3 py-3 text-sm text-muted">
+          Noch keine freien Tage eingetragen.
         </p>
-        <div className="mt-4 divide-y divide-line">
-          {draft.map((d) => (
-            <div
-              key={d.dayOfWeek}
-              className="flex flex-wrap items-center gap-3 py-2.5 text-sm"
-            >
-              <span className="w-24 font-medium">
-                {WEEKDAYS_FULL[d.dayOfWeek]}
-              </span>
-              <button
-                type="button"
-                onClick={() => updateDay(d.dayOfWeek, { isClosed: !d.isClosed })}
-                className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  d.isClosed
-                    ? "bg-zinc-100 text-zinc-500"
-                    : "bg-emerald-50 text-emerald-700"
+      ) : (
+        <ul className="mt-4 flex flex-col gap-2">
+          {timeOff.map((t) => {
+            const fromLabel = formatDateLabel(new Date(t.startDate), tz);
+            const toLabel = formatDateLabel(
+              new Date(new Date(t.endDate).getTime() - 1),
+              tz,
+            );
+            const isEditing = editingId === t.id;
+            return (
+              <li
+                key={t.id}
+                className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                  isEditing
+                    ? "border-brand bg-brand-soft"
+                    : "border-line bg-surface"
                 }`}
               >
-                {d.isClosed ? "Geschlossen" : "Geöffnet"}
-              </button>
-              {!d.isClosed && (
-                <div className="flex items-center gap-2">
-                  <select
-                    value={minutesToHHMM(d.openMinute)}
-                    onChange={(e) =>
-                      updateDay(d.dayOfWeek, {
-                        openMinute: hhmmToMinutes(e.target.value),
-                      })
-                    }
-                    className="rounded-lg border border-line bg-background px-2 py-1 tabular-nums"
-                  >
-                    {TIME_OPTIONS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-muted">bis</span>
-                  <select
-                    value={minutesToHHMM(d.closeMinute)}
-                    onChange={(e) =>
-                      updateDay(d.dayOfWeek, {
-                        closeMinute: hhmmToMinutes(e.target.value),
-                      })
-                    }
-                    className="rounded-lg border border-line bg-background px-2 py-1 tabular-nums"
-                  >
-                    {TIME_OPTIONS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-muted">Uhr</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            onClick={saveHours}
-            disabled={savingHours}
-            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
-          >
-            {savingHours ? "Speichern…" : "Zeiten speichern"}
-          </button>
-          {hoursMsg && <span className="text-sm text-muted">{hoursMsg}</span>}
-        </div>
-      </section>
-
-      {/* Time off */}
-      <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
-        <h2 className="text-sm font-semibold">Freie Tage / Urlaub</h2>
-        <p className="mt-1 text-xs text-muted">
-          Sperre einen einzelnen Tag (nur „Von" wählen) oder einen Zeitraum
-          („Von" und „Bis"). An gesperrten Tagen sind keine Buchungen möglich.
-        </p>
-
-        {timeOff.length > 0 && (
-          <ul className="mt-4 flex flex-col gap-2">
-            {timeOff.map((t) => {
-              const fromLabel = formatDateLabel(new Date(t.startDate), tz);
-              // endDate is stored as next-midnight; show the last full day.
-              const toLabel = formatDateLabel(
-                new Date(new Date(t.endDate).getTime() - 1),
-                tz,
-              );
-              return (
-                <li
-                  key={t.id}
-                  className="flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm"
-                >
-                  <span>
-                    {fromLabel === toLabel ? fromLabel : `${fromLabel} – ${toLabel}`}
-                    {t.reason && <span className="text-muted"> · {t.reason}</span>}
-                  </span>
+                <span>
+                  {fromLabel === toLabel ? fromLabel : `${fromLabel} – ${toLabel}`}
+                  {t.reason && <span className="text-muted"> · {t.reason}</span>}
+                </span>
+                <span className="flex items-center gap-3">
                   <button
-                    onClick={() => removeTimeOff(t.id)}
+                    onClick={() => startEdit(t)}
+                    className="text-muted underline underline-offset-4 hover:text-brand"
+                  >
+                    Bearbeiten
+                  </button>
+                  <button
+                    onClick={() => remove(t.id)}
                     className="text-muted underline underline-offset-4 hover:text-red-600"
                   >
                     Entfernen
                   </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
-        <form onSubmit={addTimeOff} className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-muted">Von</span>
-            <DatePicker value={start} onChange={setStart} />
-          </div>
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-muted">Bis (optional)</span>
-            <DatePicker value={end} onChange={setEnd} />
-          </div>
-          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="text-muted">Grund (optional)</span>
-            <input
-              type="text"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="z. B. Urlaub"
-              className="rounded-lg border border-line bg-background px-3 py-2"
-            />
-          </label>
-          {offError && (
-            <p className="text-sm text-red-600 sm:col-span-2">{offError}</p>
-          )}
+      <form onSubmit={submit} className="mt-4 grid gap-3 sm:grid-cols-2">
+        <p className="text-xs font-semibold text-muted sm:col-span-2">
+          {editingId ? "Zeitraum bearbeiten" : "Neuen Zeitraum sperren"}
+        </p>
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">Von</span>
+          <DatePicker value={start} onChange={setStart} />
+        </div>
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">Bis (optional)</span>
+          <DatePicker value={end} onChange={setEnd} />
+        </div>
+        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span className="text-muted">Grund (optional)</span>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="z. B. Urlaub"
+            className="rounded-lg border border-line bg-background px-3 py-2"
+          />
+        </label>
+        {error && (
+          <p className="text-sm text-red-600 sm:col-span-2">{error}</p>
+        )}
+        <div className="flex items-center gap-3 sm:col-span-2">
           <button
             type="submit"
-            disabled={addingOff}
-            className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50 sm:col-span-2"
+            disabled={saving}
+            className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50"
           >
-            {addingOff ? "Wird gesperrt…" : "Zeitraum sperren"}
+            {saving
+              ? "Speichern…"
+              : editingId
+                ? "Änderungen speichern"
+                : "Zeitraum sperren"}
           </button>
-        </form>
-      </section>
-    </div>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
+            >
+              Abbrechen
+            </button>
+          )}
+        </div>
+      </form>
+    </section>
   );
 }

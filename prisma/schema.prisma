@@ -44,6 +44,10 @@ model Settings {
   id                String   @id @default("singleton")
   /// How many days ahead customers may book (the public booking window).
   bookingWindowDays Int      @default(28)
+  /// Whether day-of reminder emails are sent at all.
+  reminderEnabled   Boolean  @default(true)
+  /// How many hours before the appointment the reminder is sent.
+  reminderLeadHours Int      @default(24)
   updatedAt         DateTime @updatedAt
 }
 

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ACTIVE_STATUSES } from "@/lib/constants";
 import { sendReminderEmail } from "@/lib/email";
+import { getSettings } from "@/lib/settings";
 
 // GET /api/cron/reminders — invoked daily by Vercel Cron. Sends a reminder
 // email for every active appointment starting within the next 24 hours that
@@ -13,14 +14,21 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
   }
 
+  const settings = await getSettings();
+  if (!settings.reminderEnabled) {
+    return Response.json({ ok: true, disabled: true, considered: 0, sent: 0 });
+  }
+
   const now = new Date();
-  const in24h = new Date(now.getTime() + 24 * 60 * 60_000);
+  const windowEnd = new Date(
+    now.getTime() + settings.reminderLeadHours * 60 * 60_000,
+  );
 
   const due = await prisma.appointment.findMany({
     where: {
       status: { in: ACTIVE_STATUSES },
       reminderSentAt: null,
-      startTime: { gt: now, lte: in24h },
+      startTime: { gt: now, lte: windowEnd },
     },
     include: { service: true },
   });

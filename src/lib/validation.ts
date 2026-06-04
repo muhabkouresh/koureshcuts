@@ -52,7 +52,15 @@ export const appointmentActionSchema = z.object({
   status: z.enum(["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]),
 });
 
-export const settingsSchema = z.object({
-  // How many days ahead customers may book (1–365).
-  bookingWindowDays: z.number().int().min(1).max(365),
-});
+export const settingsSchema = z
+  .object({
+    // How many days ahead customers may book (1–365).
+    bookingWindowDays: z.number().int().min(1).max(365).optional(),
+    // Whether reminder emails are sent.
+    reminderEnabled: z.boolean().optional(),
+    // Hours before the appointment the reminder is sent (1–168 = up to a week).
+    reminderLeadHours: z.number().int().min(1).max(168).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "Keine Änderungen übergeben.",
+  });

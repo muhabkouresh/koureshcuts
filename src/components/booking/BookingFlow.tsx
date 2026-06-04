@@ -37,8 +37,8 @@ type Step = "service" | "datetime" | "details" | "done";
 
 const tz = siteConfig.timezone;
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-// Left accent bar colors for service cards (matches the live site).
-const ACCENTS = ["bg-indigo-500", "bg-red-500", "bg-emerald-500", "bg-amber-500"];
+// Left accent bar colors for service cards (subtle, brand-led).
+const ACCENTS = ["bg-brand", "bg-stone-400", "bg-emerald-600", "bg-amber-500"];
 
 export default function BookingFlow({ services }: { services: Service[] }) {
   const [step, setStep] = useState<Step>("service");
@@ -227,8 +227,8 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                         onClick={() => setSlot(s)}
                         className={`rounded-xl px-4 py-4 text-lg font-semibold shadow-sm ring-1 transition-colors ${
                           active
-                            ? "bg-foreground text-background ring-foreground"
-                            : "bg-background ring-line hover:ring-foreground"
+                            ? "bg-brand text-white ring-brand"
+                            : "bg-background ring-line hover:ring-brand"
                         }`}
                       >
                         {formatClock(new Date(s.start), tz)}
@@ -465,10 +465,10 @@ function Calendar({
               onClick={() => onChange(dateStr)}
               className={`aspect-square rounded-lg text-sm transition-colors ${
                 selected
-                  ? "bg-foreground font-bold text-background"
+                  ? "bg-brand font-bold text-white"
                   : enabled
                     ? "font-semibold text-foreground hover:bg-surface"
-                    : "text-zinc-300 line-through"
+                    : "text-stone-300 line-through"
               }`}
             >
               {day}
