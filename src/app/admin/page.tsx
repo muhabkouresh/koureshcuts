@@ -3,6 +3,7 @@ import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
 import { getSettings } from "@/lib/settings";
+import { getRevenueStats } from "@/lib/revenue";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export default async function AdminPage() {
   const from = new Date(Date.now() - 31 * 24 * 60 * 60_000);
   const to = new Date(Date.now() + 92 * 24 * 60 * 60_000);
 
-  const [appointments, services, hoursRows, timeOff, settings] =
+  const [appointments, services, hoursRows, timeOff, settings, revenue] =
     await Promise.all([
       prisma.appointment.findMany({
         where: { startTime: { gte: from, lte: to } },
@@ -35,6 +36,7 @@ export default async function AdminPage() {
         orderBy: { startDate: "asc" },
       }),
       getSettings(),
+      getRevenueStats(),
     ]);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -48,6 +50,7 @@ export default async function AdminPage() {
     bookingWindowDays: settings.bookingWindowDays,
     reminderEnabled: settings.reminderEnabled,
     reminderLeadHours: settings.reminderLeadHours,
+    revenue,
     services,
     appointments: appointments.map((a) => ({
       id: a.id,

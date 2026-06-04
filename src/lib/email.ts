@@ -31,9 +31,6 @@ function layout(title: string, bodyHtml: string): string {
       ${title ? `<h2 style="margin:0 0 20px;font-size:16px;font-weight:600;color:#444">${title}</h2>` : ""}
       ${bodyHtml}
     </div>
-    <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:20px">
-      ${siteConfig.name} · ${siteConfig.address}<br/>${siteConfig.phone}
-    </p>
   </div></body></html>`;
 }
 
@@ -134,7 +131,7 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
      </div>
      <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
      <table style="width:100%;border-collapse:collapse">${detailRows}</table>
-     <p style="font-size:12px;color:#9ca3af;margin-top:18px">Eine Kalenderdatei (.ics) ist angehängt. Fragen? Ruf an: ${siteConfig.phone}.</p>`,
+     <p style="font-size:12px;color:#9ca3af;margin-top:18px">Eine Kalenderdatei (.ics) ist angehängt.</p>`,
   );
 
   await send({
@@ -168,7 +165,7 @@ export async function sendReminderEmail(data: BookingEmailData): Promise<void> {
      <div style="margin-top:20px">
        <a href="${cancelUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600">Termin absagen</a>
      </div>
-     <p style="font-size:13px;color:#888;margin-top:16px">Bis bald! Fragen? Ruf an: ${siteConfig.phone}.</p>`,
+     <p style="font-size:13px;color:#888;margin-top:16px">Bis bald!</p>`,
   );
   await send({
     to: data.customerEmail,

@@ -22,10 +22,14 @@ export function minutesToHHMM(minutes: number): string {
 
 /**
  * Convert a calendar date + minutes-from-midnight, interpreted in `tz`,
- * into the corresponding absolute UTC Date.
+ * into the corresponding absolute UTC Date. Minutes >= 1440 (e.g. 24:00 for the
+ * end of a day) correctly roll over to the following day instead of producing
+ * an invalid "24:00" local time.
  */
 export function zonedToUtc(dateStr: string, minutes: number, tz: string): Date {
-  const local = `${dateStr}T${minutesToHHMM(minutes)}:00`;
+  const day = addDaysToDateStr(dateStr, Math.floor(minutes / 1440));
+  const min = ((minutes % 1440) + 1440) % 1440;
+  const local = `${day}T${minutesToHHMM(min)}:00`;
   return fromZonedTime(local, tz);
 }
 

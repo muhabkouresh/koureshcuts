@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { priceShort, priceFull } from "@/lib/format";
 import { googleCalUrl } from "@/lib/gcal";
+import type { RevenueStats } from "@/lib/revenue";
 import DatePicker from "./DatePicker";
 import {
   addDaysToDateStr,
@@ -59,6 +60,7 @@ type Data = {
   bookingWindowDays: number;
   reminderEnabled: boolean;
   reminderLeadHours: number;
+  revenue: RevenueStats;
   services: Service[];
   appointments: Appointment[];
   hours: DayHours[];
@@ -118,9 +120,9 @@ export default function AdminDashboard({
   siteName: string;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"termine" | "kunden" | "verfuegbarkeit">(
-    "termine",
-  );
+  const [tab, setTab] = useState<
+    "termine" | "kunden" | "umsatz" | "verfuegbarkeit"
+  >("termine");
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -147,6 +149,7 @@ export default function AdminDashboard({
           [
             ["termine", "Termine"],
             ["kunden", "Kunden"],
+            ["umsatz", "Umsatz"],
             ["verfuegbarkeit", "Verfügbarkeit"],
           ] as const
         ).map(([key, label]) => (
@@ -176,6 +179,7 @@ export default function AdminDashboard({
       {tab === "kunden" && (
         <KundenTab services={data.services} onChange={() => router.refresh()} />
       )}
+      {tab === "umsatz" && <UmsatzTab revenue={data.revenue} />}
       {tab === "verfuegbarkeit" && (
         <Availability
           hours={data.hours}
@@ -599,6 +603,75 @@ function FeedBox({ feedUrl }: { feedUrl: string }) {
         </a>
       </div>
     </div>
+  );
+}
+
+/* ----------------------------------- Umsatz --------------------------------- */
+
+function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
+  return (
+    <div className="mt-6 flex flex-col gap-6">
+      <p className="text-xs text-muted">
+        Umsatz aus erledigten Terminen (als „Erledigt" markiert).
+      </p>
+      <div className="grid grid-cols-3 gap-3">
+        <RevenueStat label="Diese Woche" value={priceFull(revenue.thisWeekCents)} />
+        <RevenueStat
+          label="Dieser Monat"
+          value={priceFull(revenue.thisMonthCents)}
+        />
+        <RevenueStat label="Gesamt" value={priceFull(revenue.totalCents)} />
+      </div>
+      <BarChart title="Pro Woche" data={revenue.weeks} />
+      <BarChart title="Pro Monat" data={revenue.months} />
+    </div>
+  );
+}
+
+function RevenueStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-background p-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+        {label}
+      </p>
+      <p className="mt-1 text-xl font-bold text-brand">{value}</p>
+    </div>
+  );
+}
+
+function BarChart({
+  title,
+  data,
+}: {
+  title: string;
+  data: { label: string; cents: number }[];
+}) {
+  const max = Math.max(1, ...data.map((d) => d.cents));
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      <div className="mt-4 flex items-end gap-2" style={{ height: "170px" }}>
+        {data.map((d, i) => {
+          const h = d.cents > 0 ? Math.max(6, Math.round((d.cents / max) * 130)) : 2;
+          return (
+            <div
+              key={i}
+              className="flex flex-1 flex-col items-center justify-end gap-1"
+            >
+              <span className="text-[10px] font-semibold text-foreground">
+                {d.cents > 0 ? priceShort(d.cents) : ""}
+              </span>
+              <div
+                className="w-full rounded-t-md bg-brand"
+                style={{ height: `${h}px` }}
+                title={priceFull(d.cents)}
+              />
+              <span className="text-[10px] text-muted">{d.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

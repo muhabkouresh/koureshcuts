@@ -1,102 +1,80 @@
-# KoureshCuts — Politur, Bordeaux-Akzent & Admin-Erweiterungen
+# KoureshCuts — Datum-Bugfix, Mail-Footer, Umsatz-Statistik
 
 ## Context
-Die Buchungs-App (Next.js 16 + Prisma 6, Deutsch/EUR, `C:\Users\muhab\koureshcuts`)
-ist funktional fertig. Diese Runde adressiert konkretes Nutzer-Feedback:
-1. **Freie Tage / Urlaub** müssen klar **einsehbar und bearbeitbar** sein (aktuell nur
-   löschbar, Liste wenig prominent).
-2. Gesamtes UI **schöner & mit dezenter Farbe** gestalten — Akzent **Bordeaux/Rot**
-   passend zum Logo, auf **Admin + Kundenseite**.
-3. Gewünschte Ergänzungen: Urlaub im Kalender markieren, Mini-Übersicht im Admin,
-   Kunden-Storno-Link in der E-Mail, **anpassbare Terminerinnerungen**.
+Drei Punkte aus Nutzer-Feedback an der laufenden Buchungs-App
+(`C:\Users\muhab\koureshcuts`, Next.js 16 + Prisma 6, Deutsch/EUR):
 
-Der grüne „Service auswählen"-Button der Kundenseite bleibt (wie im Original).
+1. **Datum-Bug (bewiesen):** Ein gesperrter Einzeltag erscheint als „Sa., 06.06.2026 –
+   Fr., 05.06.2026" und wird gar nicht blockiert. Ursache: `zonedToUtc(dateStr, 24*60, tz)`
+   baut die ungültige Lokalzeit `…T24:00:00`, die zu **00:00 desselben Tages** kollabiert
+   (read-only verifiziert: Ergebnis = Tagesanfang statt Folgetag). Damit ist das gespeicherte
+   `endDate == startDate`. Dieselbe `24*60`-Konstruktion nutzt auch
+   `getAvailability`/`getMonthAvailability` (Tages-/Monatsfenster) → derselbe Off-by-one.
+2. **E-Mail:** Den kompletten unteren Footer (Adresse + Telefon) und den Satz „Fragen? Ruf an …"
+   entfernen.
+3. **Umsatz-Bereich (neu):** Im Admin einen Bereich, der **Umsatz pro Woche und pro Monat** zeigt –
+   inkl. einfacher Statistik/Diagramm.
 
-## Design: Bordeaux-Akzent (dezent)
-- In [globals.css](src/app/globals.css) neue Theme-Tokens ergänzen:
-  `--brand` (~`#8a1f2b`), `--brand-700` (Hover, dunkler), `--brand-soft` (~`#f7ecee`,
-  helle Tönung), als `--color-brand` / `--color-brand-soft` etc. im `@theme inline`.
-- **Dezenter Einsatz** (nicht überladen): aktive Kalendertage & Auswahl-States,
-  Zähler-Badges, Fokus-/Hover-Ringe, kleine Überschriften-Akzente, aktive Tab-Pille,
-  Stat-Zahlen. Primär-Buttons bleiben überwiegend `foreground` (schwarz) für Kontrast;
-  Storno/__Gefahr__ bleibt rot.
-- **Feinschliff** (Admin + Kunde): einheitliche `rounded-2xl`-Karten, weichere Schatten,
-  konsistente Abstände/Typografie, klarere Empty-States, Hover-Transitions. Betroffen:
-  [page.tsx](src/app/page.tsx), [BookingFlow.tsx](src/components/booking/BookingFlow.tsx),
-  [AdminDashboard.tsx](src/components/admin/AdminDashboard.tsx),
-  [DatePicker.tsx](src/components/admin/DatePicker.tsx). Service-Akzentbalken auf
-  Brand-Töne abstimmen.
+## Fix 1 — Datum/„Ende des Tages" (Root-Cause)
+- **Eine zentrale Korrektur** in [time.ts](src/lib/time.ts) → `zonedToUtc`: Minuten ≥ 1440 auf den
+  Folgetag normalisieren statt `24:00` zu bauen:
+  ```ts
+  export function zonedToUtc(dateStr, minutes, tz) {
+    const day = addDaysToDateStr(dateStr, Math.floor(minutes / 1440));
+    const min = ((minutes % 1440) + 1440) % 1440;
+    return fromZonedTime(`${day}T${minutesToHHMM(min)}:00`, tz);
+  }
+  ```
+  Damit ergibt `zonedToUtc(d, 24*60)` korrekt den Folgetag-00:00. Das repariert **automatisch**
+  Urlaub (POST/PUT timeoff) **und** die Verfügbarkeits-Fenster — ohne deren Aufrufstellen zu ändern.
+  (Slot-Generierung nutzt nur Minuten < 1440, daher unverändert.)
+- **Bestehenden, kaputt gespeicherten Urlaubseintrag bereinigen** (das eine 06.06.-Beispiel):
+  beim Ausführen per `scripts/clear-appts.ts`-Stil entfernen bzw. neu speichern (User kann den
+  Eintrag auch einfach löschen + neu anlegen).
+- Verifizieren, dass Einzeltag korrekt als „Sa., 06.06.2026" (ein Datum) angezeigt **und** in der
+  Verfügbarkeit geblockt wird; bestehende mehrtägige Sperren enden korrekt am letzten Tag.
 
-## Freie Tage / Urlaub — einsehbar + bearbeiten
-- Karte immer sichtbar mit **Empty-State** („Noch keine freien Tage eingetragen.").
-- Pro Eintrag: schön formatierter Zeitraum (Einzeltag vs. „von – bis"), Grund, plus
-  **Bearbeiten** und **Entfernen**. „Bearbeiten" lädt den Eintrag ins Formular
-  (Von/Bis/Grund) und speichert per Update.
-- Neuer Endpunkt **`PUT /api/admin/timeoff/[id]`** in
-  [timeoff/[id]/route.ts](src/app/api/admin/timeoff/[id]/route.ts) — Auth + `timeOffSchema`
-  (bereits vorhanden in [validation.ts](src/lib/validation.ts)) wiederverwenden, Datums-
-  konvertierung wie im POST (`zonedToUtc`, Ende = Folge-Mitternacht).
+## Fix 2 — E-Mail entschlacken
+In [email.ts](src/lib/email.ts):
+- `layout(...)`: den Footer-Absatz `${siteConfig.name} · ${siteConfig.address} … ${siteConfig.phone}`
+  **entfernen** (kein Adress-/Telefon-Block mehr).
+- Den Satz „… Fragen? Ruf an: ${siteConfig.phone}." aus **Bestätigungs-** und **Erinnerungs-Mail**
+  entfernen (Bestätigung endet nach dem .ics-Hinweis; Erinnerung nach „Bis bald!").
 
-## Urlaub/geschlossene Tage im Admin-Kalender markieren
-- `timeOff` + `hours` an `TermineTab` durchreichen ([admin/page.tsx](src/app/admin/page.tsx)
-  liefert beides bereits). Pro Tag berechnen: geschlossen (Wochentag `isClosed`) oder
-  gesperrt (von einem TimeOff-Bereich abgedeckt) → dezente Markierung (z. B. „frei"/„zu"
-  Punkt/Label, gedämpfter Hintergrund). Im Tagespanel bei gesperrtem Tag Hinweis
-  „Gesperrt (Urlaub)".
-
-## Mini-Übersicht (Admin, oben im Termine-Tab)
-- Kompakte Statistikkarten aus den vorhandenen `appointments` (clientseitig):
-  „Heute: X Termine", „Diese Woche: Y", „Nächster Termin: <Datum/Zeit>",
-  evtl. offene/bestätigte Zähler. Brand-Akzent für die Zahlen.
-
-## Kunden-Storno-Link (E-Mail)
-- **Ohne Schema-Änderung**: signierter Token per HMAC. Neu `src/lib/token.ts` →
-  `cancelToken(id)` = base64url(HMAC-SHA256(id, `SESSION_SECRET`)) + `verifyCancel(id, t)`.
-- E-Mail ([email.ts](src/lib/email.ts)) erhält Link
-  `${NEXT_PUBLIC_SITE_URL}/termin/absagen/{id}?t={token}` in Bestätigung + Erinnerung.
-- Öffentliche Seite `src/app/termin/absagen/[id]/page.tsx` (zeigt Termin, Token-geprüft)
-  mit Bestätigen-Button → `POST /api/appointments/[id]/cancel` (Token-geprüft) setzt
-  Status `CANCELLED` (gibt den Slot frei). Ungültiger/abgelaufener Token → freundliche
-  Fehlermeldung.
-
-## Anpassbare Terminerinnerungen
-- `Settings`-Modell ([schema.prisma](prisma/schema.prisma)) erweitern:
-  `reminderEnabled Boolean @default(true)`, `reminderLeadHours Int @default(24)` →
-  `prisma db push` + Seed-Defaults ([seed.ts](prisma/seed.ts), [settings.ts](src/lib/settings.ts)).
-- `settingsSchema` + `PUT /api/admin/settings` verallgemeinern: optionale Felder
-  (`bookingWindowDays?`, `reminderEnabled?`, `reminderLeadHours?`) — nur Übergebenes wird
-  aktualisiert.
-- Cron [reminders/route.ts](src/app/api/cron/reminders/route.ts): wenn `!reminderEnabled`
-  → nichts senden; Fenster = `now + reminderLeadHours` (statt fix 24h). `reminderSentAt`
-  bleibt der Sende-Marker. [vercel.json](vercel.json) Cron auf **stündlich** stellen, damit
-  kleinere Vorlaufzeiten greifen (Hinweis: Frequenz ggf. je nach Vercel-Plan anpassen).
-- Admin-UI: Karte **„Erinnerungen"** (Verfügbarkeit-Tab): Schalter An/Aus +
-  Auswahl Vorlauf (z. B. 2 / 6 / 12 / 24 / 48 Std.) → speichert via Settings-PUT.
+## Fix 3 — Umsatz-Statistik (Admin)
+- Neue Server-Aggregation `src/lib/revenue.ts` → `getRevenueStats()`:
+  - Query: `appointment` mit `status = COMPLETED`, `startTime >= vor 12 Monaten`,
+    `select startTime, service.priceCents`.
+  - Buckets in Shop-TZ (Europe/Berlin): **letzte 8 Wochen** (Mo-beginnend) und **letzte 6 Monate**;
+    leere Buckets als 0 erzeugen, damit das Diagramm durchgehend ist.
+  - Rückgabe: `weeks[]`, `months[]` (je `{label, cents}`), `totalCents`, `thisWeekCents`,
+    `thisMonthCents`. Wiederverwenden: `formatInTimeZone`/`de` (date-fns-tz), `dateKey`,
+    `addDaysToDateStr` aus [time.ts](src/lib/time.ts).
+- [admin/page.tsx](src/app/admin/page.tsx): `getRevenueStats()` mitladen und als `data.revenue`
+  durchreichen.
+- [AdminDashboard.tsx](src/components/admin/AdminDashboard.tsx): vierter Tab **„Umsatz"** mit einer
+  neuen `UmsatzTab`-Komponente:
+  - Kennzahl-Karten: **Diese Woche**, **Dieser Monat**, **Gesamt** (mit `priceFull`).
+  - **Balkendiagramm pro Woche** (8 Balken) und **pro Monat** (6 Balken) als reine CSS-Bars
+    (Höhe relativ zum Maximum) mit Labels + Beträgen — keine zusätzliche Chart-Library.
+  - Hinweis im UI: Umsatz = abgeschlossene („erledigte") Termine.
 
 ## Kritische Dateien
-- Styling/Tokens: [globals.css](src/app/globals.css)
-- Admin-UI (Großteil): [AdminDashboard.tsx](src/components/admin/AdminDashboard.tsx),
-  [DatePicker.tsx](src/components/admin/DatePicker.tsx), [admin/page.tsx](src/app/admin/page.tsx)
-- Kundenseite: [page.tsx](src/app/page.tsx), [BookingFlow.tsx](src/components/booking/BookingFlow.tsx)
-- Backend: [timeoff/[id]/route.ts](src/app/api/admin/timeoff/[id]/route.ts) (PUT),
-  [settings/route.ts](src/app/api/admin/settings/route.ts), [reminders/route.ts](src/app/api/cron/reminders/route.ts),
-  neu `api/appointments/[id]/cancel/route.ts`, neu `termin/absagen/[id]/page.tsx`,
-  neu `src/lib/token.ts`, [email.ts](src/lib/email.ts), [settings.ts](src/lib/settings.ts),
-  [schema.prisma](prisma/schema.prisma), [seed.ts](prisma/seed.ts), [validation.ts](src/lib/validation.ts)
+- [src/lib/time.ts](src/lib/time.ts) — `zonedToUtc`-Normalisierung (Kern-Fix)
+- [src/lib/email.ts](src/lib/email.ts) — Footer + „Ruf an"-Sätze entfernen
+- neu `src/lib/revenue.ts`; [src/app/admin/page.tsx](src/app/admin/page.tsx);
+  [src/components/admin/AdminDashboard.tsx](src/components/admin/AdminDashboard.tsx) — Umsatz-Tab
 
 ## Verifikation
-- `npm run build` (Typecheck) grün; Dev-Server-Smoke:
-  - Urlaub: anlegen, **bearbeiten** (PUT), entfernen; gesperrte/geschlossene Tage im
-    Admin-Kalender sichtbar; an gesperrtem Tag keine Kunden-Slots.
-  - Mini-Übersicht zeigt korrekte Zahlen (Testbuchung anlegen → „Heute" steigt).
-  - Storno: Testbuchung → Bestätigungsmail enthält Storno-Link; Link öffnet Seite,
-    Bestätigen storniert (Status CANCELLED, Slot wieder frei); falscher Token → abgelehnt.
-  - Erinnerungen: Aus → Cron sendet 0; Vorlauf 48h → Termin in ~30h wird erfasst;
-    `reminderSentAt` wird gesetzt (kein Doppelversand).
-  - Optischer Check Admin + Kundenseite (Mobil + Desktop), dezenter Bordeaux-Akzent.
-- Testdaten nach den Smoke-Tests entfernen (`scripts/clear-appts.ts`).
-
-## Hinweise
-- Echte E-Mails laufen über Resend (Key in `.env`, Test-Absender `onboarding@resend.dev`
-  → aktuell nur an die eigene Adresse). Für echte Kunden später Domain verifizieren.
-- Eigene Öffnungszeiten/Settings des Nutzers in der DB **nicht** durch Seed überschreiben.
+- `npm run build` grün.
+- **Datum:** Einzeltag sperren → Liste zeigt **ein** Datum (z. B. „Sa., 06.06.2026"); Verfügbarkeit
+  für diesen Tag liefert 0 Slots; Mehrtages-Sperre endet am korrekten letzten Tag. Read-only-Check
+  `zonedToUtc(d,1440)` == Folgetag-00:00.
+- **Verfügbarkeit:** gebuchter Slot an einem Zukunftstag erscheint **nicht** mehr als frei
+  (Gegenprobe, da Tagesfenster nun korrekt).
+- **E-Mail:** Testbuchung → Mail enthält **keinen** Adress-/Telefon-Footer und **keinen** „Ruf an"-Satz.
+- **Umsatz:** zwei erledigte Termine (15 € / 20 €) → „Diese Woche/Monat/Gesamt" und die Wochen-/
+  Monatsbalken zeigen die korrekten Summen.
+- Beispiel-/Testdaten nach den Tests bereinigen (`scripts/clear-appts.ts`); echte Daten/Settings
+  des Nutzers unangetastet lassen.
+```
