@@ -60,6 +60,22 @@ model TimeOff {
   createdAt DateTime @default(now())
 }
 
+/// An extra working day on a single date that the weekly template would
+/// otherwise leave closed. `date` is the start-of-day UTC instant for the shop
+/// timezone. When `isPublic` is true the day is offered in the public booking
+/// calendar; when false it is only a working-day marker for the admin agenda.
+model SpecialDay {
+  id          String   @id @default(cuid())
+  date        DateTime @unique
+  openMinute  Int      @default(540) // 09:00
+  closeMinute Int      @default(1020) // 17:00
+  isPublic    Boolean  @default(true)
+  note        String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([date])
+}
+
 /// A customer appointment. PENDING/CONFIRMED occupy the slot; CANCELLED frees it.
 model Appointment {
   id             String    @id @default(cuid())

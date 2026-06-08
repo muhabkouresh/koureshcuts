@@ -4,8 +4,9 @@ import { prisma } from "./prisma";
 import { siteConfig } from "@/config/site";
 import { addDaysToDateStr, dateKey, todayInTz, weekdayOf } from "./time";
 
-// Revenue = sum of prices of COMPLETED ("erledigt") appointments, bucketed per
-// week and per month in the shop timezone.
+// Revenue = sum of prices of appointments that have taken place (start time in
+// the past and not cancelled), bucketed per week and per month in the shop
+// timezone. No manual "erledigt" marking needed — past visits count automatically.
 
 const tz = siteConfig.timezone;
 
@@ -16,6 +17,9 @@ export type RevenueStats = {
   totalCents: number;
   thisWeekCents: number;
   thisMonthCents: number;
+  // No-shows: past appointments explicitly marked "nicht erschienen".
+  noShowCount: number;
+  noShowCents: number;
 };
 
 /** Monday (YYYY-MM-DD) of the week containing `ds`. */
@@ -26,11 +30,22 @@ function mondayOf(ds: string): string {
 
 export async function getRevenueStats(): Promise<RevenueStats> {
   const rows = await prisma.appointment.findMany({
-    where: { status: "COMPLETED" },
+    where: {
+      status: { notIn: ["CANCELLED", "NO_SHOW"] },
+      startTime: { lt: new Date() },
+    },
     select: { startTime: true, service: { select: { priceCents: true } } },
   });
 
   const totalCents = rows.reduce((s, r) => s + r.service.priceCents, 0);
+
+  // No-shows are counted separately (lost revenue), not part of the buckets.
+  const noShowRows = await prisma.appointment.findMany({
+    where: { status: "NO_SHOW" },
+    select: { service: { select: { priceCents: true } } },
+  });
+  const noShowCount = noShowRows.length;
+  const noShowCents = noShowRows.reduce((s, r) => s + r.service.priceCents, 0);
 
   // Last 8 week-buckets (oldest → newest).
   const currentMonday = mondayOf(todayInTz(tz));
@@ -79,5 +94,7 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     totalCents,
     thisWeekCents: weekMap.get(currentMonday) ?? 0,
     thisMonthCents: monthMap.get(curMonthKey) ?? 0,
+    noShowCount,
+    noShowCents,
   };
 }

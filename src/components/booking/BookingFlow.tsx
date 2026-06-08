@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { siteConfig } from "@/config/site";
 import { priceShort, priceFull } from "@/lib/format";
@@ -89,7 +90,9 @@ export default function BookingFlow({ services }: { services: Service[] }) {
     let cancelled = false;
     setLoadingSlots(true);
     setSlot(null);
-    fetch(`/api/availability?serviceId=${service.id}&date=${date}`)
+    fetch(`/api/availability?serviceId=${service.id}&date=${date}`, {
+      cache: "no-store",
+    })
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled) setSlots(data.slots ?? []);
@@ -149,6 +152,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
         if (res.status === 409 && date && service) {
           const r = await fetch(
             `/api/availability?serviceId=${service.id}&date=${date}`,
+            { cache: "no-store" },
           );
           const d = await r.json();
           setSlots(d.slots ?? []);
@@ -338,8 +342,14 @@ export default function BookingFlow({ services }: { services: Service[] }) {
             {submitting ? "Wird gebucht…" : "Verbindlich buchen"}
           </button>
           <p className="text-center text-xs text-muted">
-            Mit dem Button &quot;Verbindlich buchen&quot; akzeptierst du unsere
-            Nutzungsbedingungen und Datenschutzerklärung.
+            Mit dem Button &quot;Verbindlich buchen&quot; akzeptierst du unsere{" "}
+            <Link
+              href="/datenschutz"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Datenschutzerklärung
+            </Link>
+            .
           </p>
         </form>
       )}
@@ -369,20 +379,23 @@ export default function BookingFlow({ services }: { services: Service[] }) {
             />
           </div>
 
-          <div className="mt-6 flex flex-col gap-2">
+          <p className="mt-6 text-sm font-medium text-muted">
+            Zum Kalender hinzufügen
+          </p>
+          <div className="mt-2 flex flex-col gap-2">
             <a
               href={result.gcalUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full rounded-full bg-foreground py-3.5 text-sm font-semibold text-background"
             >
-              Zum Google Kalender hinzufügen
+              Google Kalender
             </a>
             <a
               href={result.icsUrl}
               className="w-full rounded-full bg-background py-3.5 text-sm font-medium shadow-sm ring-1 ring-line hover:ring-foreground"
             >
-              Kalenderdatei (.ics) herunterladen
+              Apple Kalender
             </a>
             <button
               onClick={reset}
@@ -426,6 +439,7 @@ function Calendar({
     setLoading(true);
     fetch(
       `/api/availability/month?serviceId=${serviceId}&year=${year}&month=${month0}`,
+      { cache: "no-store" },
     )
       .then((r) => r.json())
       .then((d) => {

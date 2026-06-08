@@ -64,8 +64,17 @@ export default async function Home() {
 
       {/* Footer */}
       <footer className="border-t border-line bg-background">
-        <div className="mx-auto max-w-5xl px-5 py-8 text-center text-xs text-muted">
-          © {new Date().getFullYear()} {siteConfig.name}. Alle Rechte vorbehalten.
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-2 px-5 py-8 text-center text-xs text-muted">
+          <Link
+            href="/datenschutz"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            Datenschutzerklärung
+          </Link>
+          <span>
+            © {new Date().getFullYear()} {siteConfig.name}. Alle Rechte
+            vorbehalten.
+          </span>
         </div>
       </footer>
     </>

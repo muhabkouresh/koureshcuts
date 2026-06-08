@@ -73,13 +73,12 @@ function gcalStamp(d: Date): string {
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
-/** Build an "Add to Google Calendar" URL. */
+/** Build an "Add to Google Calendar" URL. Address is intentionally omitted. */
 export function googleCalendarUrl(event: CalendarEvent): string {
   const params = new URLSearchParams({
     action: "TEMPLATE",
     text: event.title,
     details: event.description,
-    location: event.location,
     dates: `${gcalStamp(event.start)}/${gcalStamp(event.end)}`,
   });
   return `https://calendar.google.com/calendar/render?${params.toString()}`;

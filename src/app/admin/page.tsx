@@ -17,7 +17,7 @@ export default async function AdminPage() {
   const from = new Date(Date.now() - 31 * 24 * 60 * 60_000);
   const to = new Date(Date.now() + 92 * 24 * 60 * 60_000);
 
-  const [appointments, services, hoursRows, timeOff, settings, revenue] =
+  const [appointments, services, hoursRows, timeOff, specialDays, settings, revenue] =
     await Promise.all([
       prisma.appointment.findMany({
         where: { startTime: { gte: from, lte: to } },
@@ -34,6 +34,10 @@ export default async function AdminPage() {
       prisma.timeOff.findMany({
         where: { endDate: { gte: new Date() } },
         orderBy: { startDate: "asc" },
+      }),
+      prisma.specialDay.findMany({
+        where: { date: { gte: new Date(Date.now() - 24 * 60 * 60_000) } },
+        orderBy: { date: "asc" },
       }),
       getSettings(),
       getRevenueStats(),
@@ -75,6 +79,14 @@ export default async function AdminPage() {
       startDate: t.startDate.toISOString(),
       endDate: t.endDate.toISOString(),
       reason: t.reason,
+    })),
+    specialDays: specialDays.map((s) => ({
+      id: s.id,
+      date: s.date.toISOString(),
+      openMinute: s.openMinute,
+      closeMinute: s.closeMinute,
+      isPublic: s.isPublic,
+      note: s.note,
     })),
   };
 

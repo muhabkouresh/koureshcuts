@@ -15,9 +15,43 @@ const oswald = Oswald({
   weight: ["500", "600", "700"],
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
 export const metadata: Metadata = {
-  title: `${siteConfig.name} — Termin online buchen`,
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: `${siteConfig.name} — Termin online buchen`,
+    template: `%s · ${siteConfig.name}`,
+  },
   description: siteConfig.description,
+  applicationName: siteConfig.name,
+  keywords: [
+    "Friseur",
+    "Barbershop",
+    "Termin buchen",
+    "Haarschnitt",
+    siteConfig.name,
+  ],
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
+  openGraph: {
+    type: "website",
+    locale: "de_DE",
+    url: siteUrl,
+    siteName: siteConfig.name,
+    title: `${siteConfig.name} — Termin online buchen`,
+    description: siteConfig.description,
+    images: [{ url: "/logo.png", width: 512, height: 512, alt: siteConfig.name }],
+  },
+  twitter: {
+    card: "summary",
+    title: `${siteConfig.name} — Termin online buchen`,
+    description: siteConfig.description,
+    images: ["/logo.png"],
+  },
 };
 
 export default function RootLayout({

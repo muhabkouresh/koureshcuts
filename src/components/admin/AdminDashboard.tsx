@@ -53,6 +53,15 @@ type TimeOff = {
   reason: string;
 };
 
+type SpecialDay = {
+  id: string;
+  date: string;
+  openMinute: number;
+  closeMinute: number;
+  isPublic: boolean;
+  note: string;
+};
+
 type Customer = { name: string; email: string; phone: string };
 
 type Data = {
@@ -65,6 +74,7 @@ type Data = {
   appointments: Appointment[];
   hours: DayHours[];
   timeOff: TimeOff[];
+  specialDays: SpecialDay[];
 };
 
 const tz = siteConfig.timezone;
@@ -90,6 +100,7 @@ const STATUS_LABEL: Record<string, string> = {
   PENDING: "offen",
   CANCELLED: "storniert",
   COMPLETED: "erledigt",
+  NO_SHOW: "nicht erschienen",
 };
 
 function hhmmToMinutes(value: string): number {
@@ -105,6 +116,8 @@ function statusStyle(status: string): string {
       return "bg-amber-50 text-amber-700";
     case "CANCELLED":
       return "bg-red-50 text-red-700";
+    case "NO_SHOW":
+      return "bg-orange-50 text-orange-700";
     case "COMPLETED":
       return "bg-stone-100 text-stone-600";
     default:
@@ -121,7 +134,7 @@ export default function AdminDashboard({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<
-    "termine" | "kunden" | "umsatz" | "verfuegbarkeit"
+    "termine" | "kunden" | "umsatz" | "services" | "verfuegbarkeit"
   >("termine");
 
   async function logout() {
@@ -144,12 +157,13 @@ export default function AdminDashboard({
         </button>
       </div>
 
-      <div className="mt-6 inline-flex rounded-full border border-line bg-background p-1 text-sm">
+      <div className="mt-6 inline-flex flex-wrap gap-1 rounded-2xl border border-line bg-background p-1 text-sm">
         {(
           [
             ["termine", "Termine"],
             ["kunden", "Kunden"],
             ["umsatz", "Umsatz"],
+            ["services", "Services"],
             ["verfuegbarkeit", "Verfügbarkeit"],
           ] as const
         ).map(([key, label]) => (
@@ -171,6 +185,7 @@ export default function AdminDashboard({
           services={data.services}
           hours={data.hours}
           timeOff={data.timeOff}
+          specialDays={data.specialDays}
           feedUrl={data.feedUrl}
           siteName={siteName}
           onChange={() => router.refresh()}
@@ -180,10 +195,12 @@ export default function AdminDashboard({
         <KundenTab services={data.services} onChange={() => router.refresh()} />
       )}
       {tab === "umsatz" && <UmsatzTab revenue={data.revenue} />}
+      {tab === "services" && <ServicesTab onChange={() => router.refresh()} />}
       {tab === "verfuegbarkeit" && (
         <Availability
           hours={data.hours}
           timeOff={data.timeOff}
+          specialDays={data.specialDays}
           bookingWindowDays={data.bookingWindowDays}
           reminderEnabled={data.reminderEnabled}
           reminderLeadHours={data.reminderLeadHours}
@@ -201,6 +218,7 @@ function TermineTab({
   services,
   hours,
   timeOff,
+  specialDays,
   feedUrl,
   siteName,
   onChange,
@@ -209,6 +227,7 @@ function TermineTab({
   services: Service[];
   hours: DayHours[];
   timeOff: TimeOff[];
+  specialDays: SpecialDay[];
   feedUrl: string;
   siteName: string;
   onChange: () => void;
@@ -243,6 +262,12 @@ function TermineTab({
     [timeOff],
   );
 
+  const specialByDay = useMemo(() => {
+    const map = new Map<string, SpecialDay>();
+    for (const s of specialDays) map.set(dateKey(new Date(s.date), tz), s);
+    return map;
+  }, [specialDays]);
+
   function offReason(ds: string): string | null {
     const dayStart = zonedToUtc(ds, 0, tz).getTime();
     const r = offRanges.find((x) => dayStart >= x.start && dayStart < x.end);
@@ -276,6 +301,7 @@ function TermineTab({
   const selectedList = byDay.get(selected) ?? [];
   const selectedOff = offReason(selected);
   const selectedClosed = isClosedDay(selected);
+  const selectedSpecial = specialByDay.get(selected) ?? null;
 
   return (
     <div className="mt-6 flex flex-col gap-5">
@@ -333,13 +359,21 @@ function TermineTab({
               (a) => a.status !== "CANCELLED",
             ).length;
             const off = offReason(ds);
-            const closed = isClosedDay(ds);
+            const special = specialByDay.get(ds) ?? null;
+            // An extra working day overrides the "closed" look.
+            const closed = isClosedDay(ds) && !special;
             return (
               <button
                 key={ds}
                 onClick={() => setSelected(ds)}
                 title={
-                  off ? `Gesperrt: ${off}` : closed ? "Geschlossen" : undefined
+                  off
+                    ? `Gesperrt: ${off}`
+                    : special
+                      ? `Extra-Arbeitstag${special.isPublic ? " (öffentlich)" : " (intern)"}`
+                      : closed
+                        ? "Geschlossen"
+                        : undefined
                 }
                 className="flex flex-col items-center gap-1 rounded-xl py-1.5"
               >
@@ -358,9 +392,11 @@ function TermineTab({
                         ? "bg-brand text-white"
                         : off
                           ? "bg-brand-soft text-brand-700"
-                          : closed
-                            ? "text-stone-300"
-                            : "hover:bg-surface"
+                          : special
+                            ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                            : closed
+                              ? "text-stone-300"
+                              : "hover:bg-surface"
                   }`}
                 >
                   {Number(ds.slice(8))}
@@ -371,7 +407,9 @@ function TermineTab({
                       ? isToday
                         ? "bg-red-500"
                         : "bg-brand"
-                      : "bg-transparent"
+                      : special
+                        ? "bg-emerald-400"
+                        : "bg-transparent"
                   }`}
                 />
               </button>
@@ -380,7 +418,18 @@ function TermineTab({
         </div>
       </div>
 
-      {(selectedOff || selectedClosed) && (
+      {selectedSpecial && !selectedOff && (
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          Extra-Arbeitstag · {minutesToHHMM(selectedSpecial.openMinute)}–
+          {minutesToHHMM(selectedSpecial.closeMinute)} Uhr ·{" "}
+          {selectedSpecial.isPublic
+            ? "öffentlich buchbar"
+            : "nur für mich (nicht online buchbar)"}
+          {selectedSpecial.note ? ` · ${selectedSpecial.note}` : ""}
+        </p>
+      )}
+
+      {(selectedOff || (selectedClosed && !selectedSpecial)) && (
         <p className="rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand-700">
           {selectedOff
             ? `Gesperrt${selectedOff !== "Gesperrt" ? ` · ${selectedOff}` : ""} – keine Online-Buchungen.`
@@ -431,11 +480,15 @@ function AgendaCard({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const cancelled = a.status === "CANCELLED";
+  const noShow = a.status === "NO_SHOW";
+  const isPast = new Date(a.start).getTime() < Date.now();
   const bar = cancelled
     ? "bg-stone-300"
-    : a.serviceName.toLowerCase().includes("bart")
-      ? "bg-blue-900"
-      : "bg-brand";
+    : noShow
+      ? "bg-orange-400"
+      : a.serviceName.toLowerCase().includes("bart")
+        ? "bg-blue-900"
+        : "bg-brand";
 
   async function setStatus(status: string) {
     setBusy(true);
@@ -457,7 +510,6 @@ function AgendaCard({
       `Kunde: ${a.customerName}` +
       (a.customerPhone ? ` · ${a.customerPhone}` : "") +
       (a.customerEmail ? ` · ${a.customerEmail}` : ""),
-    location: siteConfig.address,
     start: new Date(a.start),
     end: new Date(a.end),
   });
@@ -524,22 +576,22 @@ function AgendaCard({
                 Stornieren
               </button>
             )}
-            {a.status !== "COMPLETED" && a.status !== "CANCELLED" && (
+            {isPast && !cancelled && !noShow && (
               <button
                 disabled={busy}
-                onClick={() => setStatus("COMPLETED")}
-                className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground disabled:opacity-50"
+                onClick={() => setStatus("NO_SHOW")}
+                className="rounded-lg border border-line px-3 py-1.5 hover:border-orange-400 hover:text-orange-600 disabled:opacity-50"
               >
-                Erledigt
+                Nicht erschienen
               </button>
             )}
-            {a.status === "CANCELLED" && (
+            {(a.status === "CANCELLED" || noShow) && (
               <button
                 disabled={busy}
                 onClick={() => setStatus("CONFIRMED")}
                 className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground disabled:opacity-50"
               >
-                Wiederherstellen
+                {noShow ? "Doch erschienen" : "Wiederherstellen"}
               </button>
             )}
             <span className="mx-1 text-line">|</span>
@@ -555,7 +607,7 @@ function AgendaCard({
               href={`/api/appointments/${a.id}/ics`}
               className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand"
             >
-              .ics
+              Apple Kalender
             </a>
           </div>
         </div>
@@ -612,7 +664,7 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
   return (
     <div className="mt-6 flex flex-col gap-6">
       <p className="text-xs text-muted">
-        Umsatz aus erledigten Terminen (als „Erledigt" markiert).
+        Umsatz aus wahrgenommenen Terminen (alle vergangenen, nicht stornierten).
       </p>
       <div className="grid grid-cols-3 gap-3">
         <RevenueStat label="Diese Woche" value={priceFull(revenue.thisWeekCents)} />
@@ -624,6 +676,22 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
       </div>
       <BarChart title="Pro Woche" data={revenue.weeks} />
       <BarChart title="Pro Monat" data={revenue.months} />
+
+      <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">
+          No-Shows (nicht erschienen)
+        </p>
+        <p className="mt-1 text-xl font-bold text-orange-700">
+          {revenue.noShowCount}{" "}
+          <span className="text-sm font-medium text-orange-600">
+            {revenue.noShowCount === 1 ? "Termin" : "Termine"}
+          </span>
+        </p>
+        <p className="mt-1 text-xs text-orange-700/80">
+          Entgangener Umsatz: {priceFull(revenue.noShowCents)}. Markiere einen
+          vergangenen Termin als „Nicht erschienen", damit er hier zählt.
+        </p>
+      </div>
     </div>
   );
 }
@@ -675,6 +743,344 @@ function BarChart({
   );
 }
 
+/* ---------------------------------- Services -------------------------------- */
+
+type ManagedService = {
+  id: string;
+  name: string;
+  description: string;
+  durationMinutes: number;
+  priceCents: number;
+  active: boolean;
+  sortOrder: number;
+};
+
+// "1500" cents -> "15,00"; tolerant parser back to cents ("15", "15,5", "15,50").
+function centsToInput(cents: number): string {
+  return (cents / 100).toFixed(2).replace(".", ",");
+}
+function inputToCents(value: string): number | null {
+  const n = Number(value.replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+function ServicesTab({ onChange }: { onChange: () => void }) {
+  const [services, setServices] = useState<ManagedService[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const load = useMemo(
+    () => () => {
+      setLoading(true);
+      fetch("/api/admin/services")
+        .then((r) => r.json())
+        .then((d) => setServices(d.services ?? []))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  function refresh() {
+    load();
+    onChange(); // booking form / scheduler use the active service list
+  }
+
+  return (
+    <div className="mt-6 flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold tracking-tight">Services</h2>
+        <button
+          onClick={() => {
+            setAdding((v) => !v);
+            setEditing(null);
+          }}
+          className="rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background"
+        >
+          {adding ? "Schließen" : "+ Neuer Service"}
+        </button>
+      </div>
+
+      {adding && (
+        <ServiceForm
+          onCancel={() => setAdding(false)}
+          onSaved={() => {
+            setAdding(false);
+            refresh();
+          }}
+        />
+      )}
+
+      {loading ? (
+        <p className="text-sm text-muted">Lädt…</p>
+      ) : services.length === 0 ? (
+        <p className="rounded-lg bg-surface px-3 py-3 text-sm text-muted">
+          Noch keine Services. Lege oben den ersten an.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2.5">
+          {services.map((s) => (
+            <li
+              key={s.id}
+              className="overflow-hidden rounded-2xl border border-line bg-background shadow-sm"
+            >
+              {editing === s.id ? (
+                <div className="p-4">
+                  <ServiceForm
+                    service={s}
+                    onCancel={() => setEditing(null)}
+                    onSaved={() => {
+                      setEditing(null);
+                      refresh();
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 font-semibold">
+                      <span className={s.active ? "" : "text-muted line-through"}>
+                        {s.name}
+                      </span>
+                      {!s.active && (
+                        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-500">
+                          inaktiv
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-sm text-muted">
+                      {priceFull(s.priceCents)} · {s.durationMinutes} Min.
+                      {s.description ? ` · ${s.description}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 text-xs">
+                    <button
+                      onClick={() => {
+                        setEditing(s.id);
+                        setAdding(false);
+                      }}
+                      className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand"
+                    >
+                      Bearbeiten
+                    </button>
+                    <ServiceRowActions service={s} onChanged={refresh} />
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-muted">
+        Services mit bestehenden Terminen werden beim Löschen nur deaktiviert
+        (für die Historie), sonst vollständig entfernt.
+      </p>
+    </div>
+  );
+}
+
+function ServiceRowActions({
+  service: s,
+  onChanged,
+}: {
+  service: ManagedService;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function toggleActive() {
+    setBusy(true);
+    try {
+      await fetch(`/api/admin/services/${s.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: !s.active }),
+      });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (
+      !confirm(
+        `„${s.name}" wirklich löschen? Bei bestehenden Terminen wird er stattdessen deaktiviert.`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await fetch(`/api/admin/services/${s.id}`, { method: "DELETE" });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        disabled={busy}
+        onClick={toggleActive}
+        className="rounded-lg border border-line px-3 py-1.5 hover:border-foreground disabled:opacity-50"
+      >
+        {s.active ? "Deaktivieren" : "Aktivieren"}
+      </button>
+      <button
+        disabled={busy}
+        onClick={remove}
+        className="rounded-lg border border-line px-3 py-1.5 hover:border-red-400 hover:text-red-600 disabled:opacity-50"
+      >
+        Löschen
+      </button>
+    </>
+  );
+}
+
+function ServiceForm({
+  service,
+  onCancel,
+  onSaved,
+}: {
+  service?: ManagedService;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(service?.name ?? "");
+  const [price, setPrice] = useState(
+    service ? centsToInput(service.priceCents) : "",
+  );
+  const [duration, setDuration] = useState(
+    service ? String(service.durationMinutes) : "30",
+  );
+  const [description, setDescription] = useState(service?.description ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const cents = inputToCents(price);
+    const mins = parseInt(duration, 10);
+    if (!name.trim()) return setError("Name ist erforderlich.");
+    if (cents === null) return setError("Ungültiger Preis.");
+    if (!Number.isFinite(mins) || mins < 5)
+      return setError("Dauer muss mind. 5 Minuten sein.");
+
+    setSaving(true);
+    try {
+      const url = service
+        ? `/api/admin/services/${service.id}`
+        : "/api/admin/services";
+      const res = await fetch(url, {
+        method: service ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          priceCents: cents,
+          durationMinutes: mins,
+          description: description.trim(),
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error ?? "Speichern fehlgeschlagen.");
+        return;
+      }
+      onSaved();
+    } catch {
+      setError("Netzwerkfehler. Bitte erneut versuchen.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className={
+        service
+          ? ""
+          : "rounded-2xl border border-line bg-background p-5 shadow-sm"
+      }
+    >
+      {!service && <h3 className="text-sm font-semibold">Neuer Service</h3>}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span className="text-muted">Name</span>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="z. B. Haarschnitt"
+            className="rounded-lg border border-line bg-background px-3 py-2"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">Preis (€)</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            required
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder="15,00"
+            className="rounded-lg border border-line bg-background px-3 py-2 tabular-nums"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">Dauer (Min.)</span>
+          <input
+            type="number"
+            min={5}
+            step={5}
+            required
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            className="rounded-lg border border-line bg-background px-3 py-2 tabular-nums"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span className="text-muted">Beschreibung (optional)</span>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="rounded-lg border border-line bg-background px-3 py-2"
+          />
+        </label>
+      </div>
+
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-xl bg-foreground px-5 py-2.5 text-sm font-semibold text-background disabled:opacity-50"
+        >
+          {saving ? "Speichert…" : service ? "Speichern" : "Service anlegen"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
+        >
+          Abbrechen
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /* ----------------------------------- Kunden --------------------------------- */
 
 type CustomerStat = {
@@ -683,6 +1089,7 @@ type CustomerStat = {
   phone: string;
   appointments: number;
   completed: number;
+  noShows: number;
   spentCents: number;
   lastStart: string | null;
 };
@@ -808,6 +1215,11 @@ function KundenTab({
                       <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
                         {c.completed} wahrgenommen
                       </span>
+                      {c.noShows > 0 && (
+                        <span className="rounded-full bg-orange-50 px-2.5 py-1 font-medium text-orange-700">
+                          {c.noShows} nicht erschienen
+                        </span>
+                      )}
                       <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
                         {priceFull(c.spentCents)} ausgegeben
                       </span>
@@ -1080,6 +1492,7 @@ function ScheduleForm({
 function Availability({
   hours,
   timeOff,
+  specialDays,
   bookingWindowDays,
   reminderEnabled,
   reminderLeadHours,
@@ -1087,6 +1500,7 @@ function Availability({
 }: {
   hours: DayHours[];
   timeOff: TimeOff[];
+  specialDays: SpecialDay[];
   bookingWindowDays: number;
   reminderEnabled: boolean;
   reminderLeadHours: number;
@@ -1101,6 +1515,7 @@ function Availability({
         onChange={onChange}
       />
       <HoursCard hours={hours} onChange={onChange} />
+      <SpecialDaysCard specialDays={specialDays} onChange={onChange} />
       <TimeOffCard timeOff={timeOff} onChange={onChange} />
     </div>
   );
@@ -1554,6 +1969,249 @@ function TimeOffCard({
               : editingId
                 ? "Änderungen speichern"
                 : "Zeitraum sperren"}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
+            >
+              Abbrechen
+            </button>
+          )}
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function SpecialDaysCard({
+  specialDays,
+  onChange,
+}: {
+  specialDays: SpecialDay[];
+  onChange: () => void;
+}) {
+  const [date, setDate] = useState("");
+  const [openTime, setOpenTime] = useState("10:00");
+  const [closeTime, setCloseTime] = useState("18:00");
+  const [isPublic, setIsPublic] = useState(true);
+  const [note, setNote] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function resetForm() {
+    setDate("");
+    setOpenTime("10:00");
+    setCloseTime("18:00");
+    setIsPublic(true);
+    setNote("");
+    setEditingId(null);
+    setError(null);
+  }
+
+  function startEdit(s: SpecialDay) {
+    setEditingId(s.id);
+    setDate(dateKey(new Date(s.date), tz));
+    setOpenTime(minutesToHHMM(s.openMinute));
+    setCloseTime(minutesToHHMM(s.closeMinute));
+    setIsPublic(s.isPublic);
+    setNote(s.note);
+    setError(null);
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!date) {
+      setError("Bitte ein Datum wählen.");
+      return;
+    }
+    if (hhmmToMinutes(closeTime) <= hhmmToMinutes(openTime)) {
+      setError("Schließzeit muss nach der Öffnungszeit liegen.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const url = editingId
+        ? `/api/admin/special-days/${editingId}`
+        : "/api/admin/special-days";
+      const res = await fetch(url, {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date,
+          openMinute: hhmmToMinutes(openTime),
+          closeMinute: hhmmToMinutes(closeTime),
+          isPublic,
+          note,
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error ?? "Konnte nicht gespeichert werden.");
+        return;
+      }
+      resetForm();
+      onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: string) {
+    await fetch(`/api/admin/special-days/${id}`, { method: "DELETE" });
+    if (editingId === id) resetForm();
+    onChange();
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+      <h2 className="text-sm font-semibold">Extra-Arbeitstage</h2>
+      <p className="mt-1 text-xs text-muted">
+        Öffne einen einzelnen Tag, der laut Öffnungszeiten eigentlich zu ist –
+        mit eigenen Uhrzeiten. „Öffentlich buchbar“ erscheint im Kunden-Kalender;
+        „Nur für mich“ ist nur intern in deiner Terminübersicht sichtbar.
+      </p>
+
+      {specialDays.length === 0 ? (
+        <p className="mt-4 rounded-lg bg-surface px-3 py-3 text-sm text-muted">
+          Noch keine Extra-Arbeitstage eingetragen.
+        </p>
+      ) : (
+        <ul className="mt-4 flex flex-col gap-2">
+          {specialDays.map((s) => {
+            const isEditing = editingId === s.id;
+            return (
+              <li
+                key={s.id}
+                className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${
+                  isEditing ? "border-brand bg-brand-soft" : "border-line bg-surface"
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className="font-medium">
+                    {formatDateLabel(new Date(s.date), tz)}
+                  </span>
+                  <span className="text-muted">
+                    {" "}
+                    · {minutesToHHMM(s.openMinute)}–{minutesToHHMM(s.closeMinute)} Uhr
+                  </span>
+                  <span
+                    className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      s.isPublic
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-stone-100 text-stone-500"
+                    }`}
+                  >
+                    {s.isPublic ? "öffentlich buchbar" : "nur für mich"}
+                  </span>
+                  {s.note && <span className="text-muted"> · {s.note}</span>}
+                </span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <button
+                    onClick={() => startEdit(s)}
+                    className="text-muted underline underline-offset-4 hover:text-brand"
+                  >
+                    Bearbeiten
+                  </button>
+                  <button
+                    onClick={() => remove(s.id)}
+                    className="text-muted underline underline-offset-4 hover:text-red-600"
+                  >
+                    Entfernen
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <form onSubmit={submit} className="mt-4 grid gap-3">
+        <p className="text-xs font-semibold text-muted">
+          {editingId ? "Eintrag bearbeiten" : "Extra-Arbeitstag hinzufügen"}
+        </p>
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">Datum</span>
+          <div className="max-w-[14rem]">
+            <DatePicker value={date} onChange={setDate} />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted">Von</span>
+          <select
+            value={openTime}
+            onChange={(e) => setOpenTime(e.target.value)}
+            className="rounded-lg border border-line bg-background px-2 py-1 tabular-nums"
+          >
+            {TIME_OPTIONS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <span className="text-muted">bis</span>
+          <select
+            value={closeTime}
+            onChange={(e) => setCloseTime(e.target.value)}
+            className="rounded-lg border border-line bg-background px-2 py-1 tabular-nums"
+          >
+            {TIME_OPTIONS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <span className="text-muted">Uhr</span>
+        </div>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => setIsPublic(true)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ${
+              isPublic
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                : "bg-background text-muted ring-line"
+            }`}
+          >
+            Öffentlich buchbar
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsPublic(false)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ${
+              !isPublic
+                ? "bg-foreground text-background ring-foreground"
+                : "bg-background text-muted ring-line"
+            }`}
+          >
+            Nur für mich
+          </button>
+        </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">Notiz (optional)</span>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="z. B. Sondertermin"
+            className="rounded-lg border border-line bg-background px-3 py-2"
+          />
+        </label>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50"
+          >
+            {saving
+              ? "Speichern…"
+              : editingId
+                ? "Änderungen speichern"
+                : "Tag hinzufügen"}
           </button>
           {editingId && (
             <button

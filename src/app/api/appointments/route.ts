@@ -7,9 +7,19 @@ import { createAppointmentSchema } from "@/lib/validation";
 import { getAvailability } from "@/lib/availability";
 import { sendConfirmationEmails } from "@/lib/email";
 import { googleCalendarUrl } from "@/lib/calendar";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 
 // POST /api/appointments — create a guest booking.
 export async function POST(request: NextRequest) {
+  // Throttle booking bursts per IP: max 6 attempts per 10 minutes.
+  const limit = rateLimit(`book:${clientIp(request)}`, 6, 10 * 60_000);
+  if (!limit.ok) {
+    return Response.json(
+      { error: "Zu viele Anfragen. Bitte versuche es später erneut." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } },
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();

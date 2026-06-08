@@ -89,6 +89,9 @@ async function send({ to, subject, html, attachIcs }: SendArgs): Promise<void> {
 export async function sendConfirmationEmails(data: BookingEmailData): Promise<void> {
   const event = calendarEvent(data);
   const gcal = googleCalendarUrl(event);
+  // Apple Calendar opens the .ics file; link to the hosted download.
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const icsUrl = `${siteUrl}/api/appointments/${data.id}/ics`;
   let ics: string | undefined;
   try {
     ics = buildIcs(event);
@@ -125,13 +128,16 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
        <div style="margin:22px 0 8px">
          <a href="${cancelUrl(data.id)}" style="display:inline-block;background:#fff;border:1px solid #d6d3d1;color:#18181b;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700">Termin stornieren</a>
        </div>
+       <p style="font-size:13px;color:#888;margin:6px 0 4px">Zum Kalender hinzufügen</p>
        <div style="margin:0 0 4px">
-         <a href="${gcal}" style="font-size:13px;color:#8a1f2b;text-decoration:underline">Zum Google Kalender hinzufügen</a>
+         <a href="${gcal}" style="font-size:13px;color:#8a1f2b;text-decoration:underline">Google Kalender</a>
+         <span style="color:#d6d3d1;margin:0 8px">·</span>
+         <a href="${icsUrl}" style="font-size:13px;color:#8a1f2b;text-decoration:underline">Apple Kalender</a>
        </div>
      </div>
      <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
      <table style="width:100%;border-collapse:collapse">${detailRows}</table>
-     <p style="font-size:12px;color:#9ca3af;margin-top:18px">Eine Kalenderdatei (.ics) ist angehängt.</p>`,
+     <p style="font-size:12px;color:#9ca3af;margin-top:18px">Eine Kalenderdatei (.ics) ist ebenfalls angehängt.</p>`,
   );
 
   await send({

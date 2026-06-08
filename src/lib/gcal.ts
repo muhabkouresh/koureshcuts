@@ -7,7 +7,6 @@ function stamp(d: Date): string {
 export function googleCalUrl(args: {
   title: string;
   details: string;
-  location: string;
   start: Date;
   end: Date;
 }): string {
@@ -15,7 +14,6 @@ export function googleCalUrl(args: {
     action: "TEMPLATE",
     text: args.title,
     details: args.details,
-    location: args.location,
     dates: `${stamp(args.start)}/${stamp(args.end)}`,
   });
   return `https://calendar.google.com/calendar/render?${params.toString()}`;

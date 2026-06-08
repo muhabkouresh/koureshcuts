@@ -27,6 +27,7 @@ export type AvailabilityResult = {
 
 type ApptWindow = Pick<Appointment, "startTime" | "endTime">;
 type TimeOffWindow = { startDate: Date; endDate: Date };
+type SpecialDayWindow = { date: Date; openMinute: number; closeMinute: number };
 
 const tz = siteConfig.timezone;
 
@@ -45,6 +46,7 @@ function computeSlots(
   service: Pick<Service, "durationMinutes">,
   hoursByDay: Map<number, BusinessHours>,
   timeOffs: TimeOffWindow[],
+  specialDays: SpecialDayWindow[],
   appointments: ApptWindow[],
   now: Date,
   windowDays: number,
@@ -53,31 +55,46 @@ function computeSlots(
   const minStart = new Date(now.getTime() + siteConfig.minLeadMinutes * 60_000);
   const windowEnd = new Date(now.getTime() + windowDays * 24 * 60 * 60_000);
 
-  const hours = hoursByDay.get(weekdayOf(dateStr));
-  if (!hours || hours.isClosed || hours.closeMinute <= hours.openMinute) {
-    return [];
-  }
-
   const dayStartUtc = zonedToUtc(dateStr, 0, tz);
   const dayEndUtc = zonedToUtc(dateStr, 24 * 60, tz);
 
-  // Full-day time-off covering this date blocks everything.
+  // An extra working day (public) overrides the weekly template and opens the
+  // date with its own hours, even if that weekday is normally closed.
+  const special = specialDays.find(
+    (s) => s.date >= dayStartUtc && s.date < dayEndUtc,
+  );
+  let openMinute: number;
+  let closeMinute: number;
+  if (special) {
+    openMinute = special.openMinute;
+    closeMinute = special.closeMinute;
+  } else {
+    const hours = hoursByDay.get(weekdayOf(dateStr));
+    if (!hours || hours.isClosed || hours.closeMinute <= hours.openMinute) {
+      return [];
+    }
+    openMinute = hours.openMinute;
+    closeMinute = hours.closeMinute;
+  }
+
+  // Full-day time-off covering this date blocks everything (overrides extra days).
   const blocked = timeOffs.some(
     (t) => t.startDate < dayEndUtc && t.endDate >= dayStartUtc,
   );
   if (blocked) return [];
 
   const slots: Slot[] = [];
-  const lastStartMinute = hours.closeMinute - duration;
+  const lastStartMinute = closeMinute - duration;
   for (
-    let minute = hours.openMinute;
+    let minute = openMinute;
     minute <= lastStartMinute;
     minute += SLOT_INTERVAL_MINUTES
   ) {
     const start = zonedToUtc(dateStr, minute, tz);
     const end = new Date(start.getTime() + duration * 60_000);
     if (start < minStart) continue;
-    if (start > windowEnd) continue;
+    // Extra working days are bookable regardless of the normal booking window.
+    if (!special && start > windowEnd) continue;
     if (appointments.some((a) => overlaps(start, end, a.startTime, a.endTime)))
       continue;
     slots.push({ start: start.toISOString(), end: end.toISOString() });
@@ -107,28 +124,34 @@ export async function getAvailability(
   const dayStartUtc = zonedToUtc(dateStr, 0, tz);
   const dayEndUtc = zonedToUtc(dateStr, 24 * 60, tz);
 
-  const [hoursByDay, timeOffs, appointments, settings] = await Promise.all([
-    loadHoursMap(),
-    prisma.timeOff.findMany({
-      where: { startDate: { lt: dayEndUtc }, endDate: { gte: dayStartUtc } },
-      select: { startDate: true, endDate: true },
-    }),
-    prisma.appointment.findMany({
-      where: {
-        status: { in: ACTIVE_STATUSES },
-        startTime: { lt: dayEndUtc },
-        endTime: { gt: dayStartUtc },
-      },
-      select: { startTime: true, endTime: true },
-    }),
-    getSettings(),
-  ]);
+  const [hoursByDay, timeOffs, specialDays, appointments, settings] =
+    await Promise.all([
+      loadHoursMap(),
+      prisma.timeOff.findMany({
+        where: { startDate: { lt: dayEndUtc }, endDate: { gte: dayStartUtc } },
+        select: { startDate: true, endDate: true },
+      }),
+      prisma.specialDay.findMany({
+        where: { isPublic: true, date: { gte: dayStartUtc, lt: dayEndUtc } },
+        select: { date: true, openMinute: true, closeMinute: true },
+      }),
+      prisma.appointment.findMany({
+        where: {
+          status: { in: ACTIVE_STATUSES },
+          startTime: { lt: dayEndUtc },
+          endTime: { gt: dayStartUtc },
+        },
+        select: { startTime: true, endTime: true },
+      }),
+      getSettings(),
+    ]);
 
   const slots = computeSlots(
     dateStr,
     service,
     hoursByDay,
     timeOffs,
+    specialDays,
     appointments,
     new Date(),
     settings.bookingWindowDays,
@@ -156,22 +179,33 @@ export async function getMonthAvailability(
   const total = daysInMonth(year, month0);
   const monthEndUtc = zonedToUtc(toDateStr(year, month0, total), 24 * 60, tz);
 
-  const [hoursByDay, timeOffs, appointments, settings] = await Promise.all([
-    loadHoursMap(),
-    prisma.timeOff.findMany({
-      where: { startDate: { lt: monthEndUtc }, endDate: { gte: monthStartUtc } },
-      select: { startDate: true, endDate: true },
-    }),
-    prisma.appointment.findMany({
-      where: {
-        status: { in: ACTIVE_STATUSES },
-        startTime: { lt: monthEndUtc },
-        endTime: { gt: monthStartUtc },
-      },
-      select: { startTime: true, endTime: true },
-    }),
-    getSettings(),
-  ]);
+  const [hoursByDay, timeOffs, specialDays, appointments, settings] =
+    await Promise.all([
+      loadHoursMap(),
+      prisma.timeOff.findMany({
+        where: {
+          startDate: { lt: monthEndUtc },
+          endDate: { gte: monthStartUtc },
+        },
+        select: { startDate: true, endDate: true },
+      }),
+      prisma.specialDay.findMany({
+        where: {
+          isPublic: true,
+          date: { gte: monthStartUtc, lt: monthEndUtc },
+        },
+        select: { date: true, openMinute: true, closeMinute: true },
+      }),
+      prisma.appointment.findMany({
+        where: {
+          status: { in: ACTIVE_STATUSES },
+          startTime: { lt: monthEndUtc },
+          endTime: { gt: monthStartUtc },
+        },
+        select: { startTime: true, endTime: true },
+      }),
+      getSettings(),
+    ]);
 
   const now = new Date();
   const days: number[] = [];
@@ -182,6 +216,7 @@ export async function getMonthAvailability(
       service,
       hoursByDay,
       timeOffs,
+      specialDays,
       appointments,
       now,
       settings.bookingWindowDays,

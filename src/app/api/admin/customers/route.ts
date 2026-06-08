@@ -2,7 +2,8 @@ import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/admin/customers — distinct customers with stats (appointments had,
-// money spent on completed visits, last visit). Deduplicated by email, then name.
+// money spent on past visits, last visit). A visit counts as "wahrgenommen"
+// automatically once its start time is in the past. Deduplicated by email, then name.
 export async function GET() {
   if (!(await isAuthenticated())) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
@@ -27,10 +28,12 @@ export async function GET() {
     phone: string;
     appointments: number; // non-cancelled count
     completed: number;
+    noShows: number;
     spentCents: number;
     lastStart: string | null;
   };
 
+  const now = Date.now();
   const map = new Map<string, Customer>();
   for (const r of rows) {
     const key = (r.customerEmail || r.customerName).toLowerCase().trim();
@@ -44,19 +47,28 @@ export async function GET() {
         phone: r.customerPhone,
         appointments: 0,
         completed: 0,
+        noShows: 0,
         spentCents: 0,
         lastStart: null,
       };
       map.set(key, c);
     }
     if (!c.phone && r.customerPhone) c.phone = r.customerPhone;
-    if (r.status !== "CANCELLED") {
+    if (r.status === "NO_SHOW") {
+      // Booked but didn't show up — counts as an appointment, but not as a
+      // completed visit and not toward revenue.
+      c.appointments += 1;
+      c.noShows += 1;
+      if (!c.lastStart) c.lastStart = r.startTime.toISOString();
+    } else if (r.status !== "CANCELLED") {
       c.appointments += 1;
       if (!c.lastStart) c.lastStart = r.startTime.toISOString();
-    }
-    if (r.status === "COMPLETED") {
-      c.completed += 1;
-      c.spentCents += r.service.priceCents;
+      // A visit counts as "wahrgenommen" once it lies in the past — no manual
+      // "erledigt" marking needed.
+      if (r.startTime.getTime() < now) {
+        c.completed += 1;
+        c.spentCents += r.service.priceCents;
+      }
     }
   }
 

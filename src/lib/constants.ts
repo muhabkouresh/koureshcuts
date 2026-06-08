@@ -5,6 +5,9 @@ export const AppointmentStatus = {
   CONFIRMED: "CONFIRMED",
   CANCELLED: "CANCELLED",
   COMPLETED: "COMPLETED",
+  // Customer didn't show up. Set manually on a past appointment; excluded from
+  // revenue and from "wahrgenommen" counts, tracked separately as a no-show.
+  NO_SHOW: "NO_SHOW",
 } as const;
 
 export type AppointmentStatus =
