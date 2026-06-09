@@ -15,6 +15,16 @@ export const createAppointmentSchema = z.object({
 
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
 
+// Joining the waitlist for a fully-booked day (public booking flow).
+export const joinWaitlistSchema = z.object({
+  serviceId: z.string().min(1, "Service ist erforderlich."),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ungültiges Datum."),
+  customerName: z.string().trim().min(1, "Name ist erforderlich.").max(120),
+  customerEmail: z.string().trim().email("Gültige E-Mail eingeben."),
+});
+
+export type JoinWaitlistInput = z.infer<typeof joinWaitlistSchema>;
+
 export const adminLoginSchema = z.object({
   password: z.string().min(1, "Password is required."),
 });

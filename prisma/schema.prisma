@@ -18,15 +18,16 @@ datasource db {
 
 /// A bookable service (haircut, beard trim, etc.).
 model Service {
-  id              String        @id @default(cuid())
+  id              String         @id @default(cuid())
   name            String
-  description     String        @default("")
+  description     String         @default("")
   durationMinutes Int
   priceCents      Int
-  active          Boolean       @default(true)
-  sortOrder       Int           @default(0)
+  active          Boolean        @default(true)
+  sortOrder       Int            @default(0)
   appointments    Appointment[]
-  createdAt       DateTime      @default(now())
+  waitlist        WaitlistEntry[]
+  createdAt       DateTime       @default(now())
 }
 
 /// Weekly opening-hours template, one row per weekday (0 = Sunday … 6 = Saturday).
@@ -93,4 +94,21 @@ model Appointment {
 
   @@index([startTime])
   @@index([status])
+}
+
+/// A customer waiting for a spot on a fully-booked day. Created from the public
+/// booking flow when a chosen day has no free slots. `date` is the start-of-day
+/// UTC instant for the shop timezone. `notifiedAt` is set once the owner pings
+/// the customer that a slot opened up.
+model WaitlistEntry {
+  id            String    @id @default(cuid())
+  service       Service   @relation(fields: [serviceId], references: [id])
+  serviceId     String
+  date          DateTime
+  customerName  String
+  customerEmail String
+  notifiedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([date])
 }

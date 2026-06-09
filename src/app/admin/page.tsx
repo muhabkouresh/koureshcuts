@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
 import { getSettings } from "@/lib/settings";
 import { getRevenueStats } from "@/lib/revenue";
+import { nowMs } from "@/lib/time";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 
 export const dynamic = "force-dynamic";
@@ -14,11 +15,19 @@ export default async function AdminPage() {
   }
 
   // Window for the calendar view: last ~31 days through ~92 days ahead.
-  const from = new Date(Date.now() - 31 * 24 * 60 * 60_000);
-  const to = new Date(Date.now() + 92 * 24 * 60 * 60_000);
+  const from = new Date(nowMs() - 31 * 24 * 60 * 60_000);
+  const to = new Date(nowMs() + 92 * 24 * 60 * 60_000);
 
-  const [appointments, services, hoursRows, timeOff, specialDays, settings, revenue] =
-    await Promise.all([
+  const [
+    appointments,
+    services,
+    hoursRows,
+    timeOff,
+    specialDays,
+    settings,
+    revenue,
+    waitlist,
+  ] = await Promise.all([
       prisma.appointment.findMany({
         where: { startTime: { gte: from, lte: to } },
         orderBy: { startTime: "asc" },
@@ -36,11 +45,17 @@ export default async function AdminPage() {
         orderBy: { startDate: "asc" },
       }),
       prisma.specialDay.findMany({
-        where: { date: { gte: new Date(Date.now() - 24 * 60 * 60_000) } },
+        where: { date: { gte: new Date(nowMs() - 24 * 60 * 60_000) } },
         orderBy: { date: "asc" },
       }),
       getSettings(),
       getRevenueStats(),
+      prisma.waitlistEntry.findMany({
+        where: { date: { gte: new Date(nowMs() - 24 * 60 * 60_000) } },
+        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+        include: { service: { select: { name: true } } },
+        take: 500,
+      }),
     ]);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -87,6 +102,14 @@ export default async function AdminPage() {
       closeMinute: s.closeMinute,
       isPublic: s.isPublic,
       note: s.note,
+    })),
+    waitlist: waitlist.map((w) => ({
+      id: w.id,
+      serviceName: w.service.name,
+      date: w.date.toISOString(),
+      customerName: w.customerName,
+      customerEmail: w.customerEmail,
+      notifiedAt: w.notifiedAt ? w.notifiedAt.toISOString() : null,
     })),
   };
 

@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Oswald } from "next/font/google";
 import "./globals.css";
 import { siteConfig } from "@/config/site";
+import PWARegister from "@/components/ui/PWARegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,7 +36,7 @@ export const metadata: Metadata = {
   icons: {
     icon: "/logo.png",
     shortcut: "/logo.png",
-    apple: "/logo.png",
+    apple: "/apple-icon.png",
   },
   openGraph: {
     type: "website",
@@ -52,6 +53,15 @@ export const metadata: Metadata = {
     description: siteConfig.description,
     images: ["/logo.png"],
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: siteConfig.name,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#8a1f2b",
 };
 
 export default function RootLayout({
@@ -66,6 +76,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-page text-foreground">
         {children}
+        <PWARegister />
       </body>
     </html>
   );

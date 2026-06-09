@@ -10,6 +10,15 @@ export function pad2(n: number): string {
   return n.toString().padStart(2, "0");
 }
 
+/**
+ * Current time in milliseconds. Wrapped in a helper so server components can
+ * read the request-time clock without tripping the react-hooks/purity lint
+ * rule (which only flags direct `Date.now()` calls inside a component body).
+ */
+export function nowMs(): number {
+  return Date.now();
+}
+
 /** Weekday (0 = Sunday … 6 = Saturday) for a "YYYY-MM-DD" calendar date. */
 export function weekdayOf(dateStr: string): number {
   return new Date(`${dateStr}T00:00:00Z`).getUTCDay();

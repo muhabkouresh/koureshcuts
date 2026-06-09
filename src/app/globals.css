@@ -12,6 +12,16 @@
   --brand: #8a1f2b;
   --brand-700: #6f1822;
   --brand-soft: #f7eced;
+  /* Warm gold highlight — used very sparingly for a premium feel. */
+  --gold: #b08d4f;
+
+  /* Layered, soft shadows for a premium light look. */
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.04), 0 1px 3px rgba(28, 25, 23, 0.06);
+  --shadow-md: 0 4px 12px -2px rgba(28, 25, 23, 0.08),
+    0 2px 6px -2px rgba(28, 25, 23, 0.05);
+  --shadow-lg: 0 18px 40px -12px rgba(28, 25, 23, 0.16),
+    0 6px 16px -8px rgba(28, 25, 23, 0.08);
+  --shadow-brand: 0 12px 30px -10px rgba(138, 31, 43, 0.4);
 }
 
 @theme inline {
@@ -25,6 +35,7 @@
   --color-brand: var(--brand);
   --color-brand-700: var(--brand-700);
   --color-brand-soft: var(--brand-soft);
+  --color-gold: var(--gold);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-oswald);
@@ -40,4 +51,215 @@ body {
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ----------------------------------------------------------------------------
+   Premium utilities & animations
+   ------------------------------------------------------------------------- */
+
+/* Soft, layered shadow helpers (used via class on top of Tailwind). */
+.shadow-soft {
+  box-shadow: var(--shadow-md);
+}
+.shadow-elevated {
+  box-shadow: var(--shadow-lg);
+}
+
+/* Subtle radial glow used behind the hero. */
+.hero-glow {
+  background:
+    radial-gradient(60% 55% at 50% 0%, rgba(138, 31, 43, 0.1) 0%, transparent 70%),
+    radial-gradient(45% 45% at 85% 20%, rgba(176, 141, 79, 0.1) 0%, transparent 70%),
+    radial-gradient(40% 40% at 12% 30%, rgba(138, 31, 43, 0.07) 0%, transparent 70%);
+}
+
+/* Hairline gradient divider. */
+.divider-fade {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--line) 18%,
+    var(--line) 82%,
+    transparent
+  );
+}
+
+/* Glossy sheen that sweeps across a button on hover. */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  transform: translateX(-130%) skewX(-18deg);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.28),
+    transparent
+  );
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.btn-shine:hover::after {
+  transform: translateX(130%) skewX(-18deg);
+}
+
+/* Card lift on hover. */
+.card-lift {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.card-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Scroll reveal: starts hidden, `.is-visible` (added by Reveal) animates in. */
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Keyframes */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes pop-check {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes ring-pulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+@keyframes bounce-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(6px);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-fade-in {
+  animation: fade-in 0.8s ease both;
+}
+.animate-scale-in {
+  animation: scale-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-float {
+  animation: float-slow 6s ease-in-out infinite;
+}
+.animate-pop-check {
+  animation: pop-check 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-bounce-soft {
+  animation: bounce-soft 1.8s ease-in-out infinite;
+}
+
+/* Stagger helpers for sequential reveals. */
+.delay-1 {
+  animation-delay: 0.08s;
+  transition-delay: 0.08s;
+}
+.delay-2 {
+  animation-delay: 0.16s;
+  transition-delay: 0.16s;
+}
+.delay-3 {
+  animation-delay: 0.24s;
+  transition-delay: 0.24s;
+}
+.delay-4 {
+  animation-delay: 0.32s;
+  transition-delay: 0.32s;
+}
+
+/* Respect users who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .animate-fade-up,
+  .animate-fade-in,
+  .animate-scale-in,
+  .animate-float,
+  .animate-pop-check,
+  .animate-bounce-soft,
+  .btn-shine::after,
+  .card-lift {
+    animation: none !important;
+    transition: none !important;
+  }
 }

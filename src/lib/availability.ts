@@ -172,7 +172,7 @@ export async function getMonthAvailability(
   serviceId: string,
   year: number,
   month0: number,
-): Promise<{ year: number; month: number; days: number[] }> {
+): Promise<{ year: number; month: number; days: number[]; full: number[] }> {
   const service = await loadService(serviceId);
 
   const monthStartUtc = zonedToUtc(toDateStr(year, month0, 1), 0, tz);
@@ -209,6 +209,9 @@ export async function getMonthAvailability(
 
   const now = new Date();
   const days: number[] = [];
+  // Days that are open and within the booking window but have no free slot left
+  // (i.e. fully booked) — offered as waitlist days in the calendar.
+  const full: number[] = [];
   for (let day = 1; day <= total; day++) {
     const dateStr = toDateStr(year, month0, day);
     const slots = computeSlots(
@@ -221,7 +224,24 @@ export async function getMonthAvailability(
       now,
       settings.bookingWindowDays,
     );
-    if (slots.length > 0) days.push(day);
+    if (slots.length > 0) {
+      days.push(day);
+      continue;
+    }
+    // No free slots — distinguish "open but fully booked" from "closed" by
+    // recomputing as if there were no bookings. If that yields slots, the day
+    // is genuinely open (and in-window) but full.
+    const capacity = computeSlots(
+      dateStr,
+      service,
+      hoursByDay,
+      timeOffs,
+      specialDays,
+      [],
+      now,
+      settings.bookingWindowDays,
+    );
+    if (capacity.length > 0) full.push(day);
   }
-  return { year, month: month0, days };
+  return { year, month: month0, days, full };
 }

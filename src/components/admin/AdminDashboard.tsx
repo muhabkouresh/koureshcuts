@@ -14,6 +14,7 @@ import {
   formatDateLabel,
   longDateFromStr,
   minutesToHHMM,
+  nowMs,
   todayInTz,
   weekdayOf,
   zonedToUtc,
@@ -64,6 +65,15 @@ type SpecialDay = {
 
 type Customer = { name: string; email: string; phone: string };
 
+type WaitlistItem = {
+  id: string;
+  serviceName: string;
+  date: string;
+  customerName: string;
+  customerEmail: string;
+  notifiedAt: string | null;
+};
+
 type Data = {
   feedUrl: string;
   bookingWindowDays: number;
@@ -75,6 +85,7 @@ type Data = {
   hours: DayHours[];
   timeOff: TimeOff[];
   specialDays: SpecialDay[];
+  waitlist: WaitlistItem[];
 };
 
 const tz = siteConfig.timezone;
@@ -144,20 +155,26 @@ export default function AdminDashboard({
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-10">
+    <main className="mx-auto w-full max-w-3xl flex-1 animate-fade-in px-5 py-10">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight">
+        <h1 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt=""
+            className="h-8 w-8 rounded-full object-cover ring-1 ring-line"
+          />
           {siteName} <span className="text-brand">· Admin</span>
         </h1>
         <button
           onClick={logout}
-          className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
+          className="text-sm text-muted underline underline-offset-4 transition-colors hover:text-foreground"
         >
           Abmelden
         </button>
       </div>
 
-      <div className="mt-6 inline-flex flex-wrap gap-1 rounded-2xl border border-line bg-background p-1 text-sm">
+      <div className="mt-6 inline-flex flex-wrap gap-1 rounded-2xl border border-line bg-background p-1 text-sm shadow-soft">
         {(
           [
             ["termine", "Termine"],
@@ -170,8 +187,10 @@ export default function AdminDashboard({
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`rounded-full px-4 py-1.5 transition-colors ${
-              tab === key ? "bg-brand text-white" : "text-muted hover:text-foreground"
+            className={`rounded-full px-4 py-1.5 transition-all duration-300 ${
+              tab === key
+                ? "bg-brand text-white shadow-[var(--shadow-brand)]"
+                : "text-muted hover:bg-brand-soft hover:text-foreground"
             }`}
           >
             {label}
@@ -186,6 +205,7 @@ export default function AdminDashboard({
           hours={data.hours}
           timeOff={data.timeOff}
           specialDays={data.specialDays}
+          waitlist={data.waitlist}
           feedUrl={data.feedUrl}
           siteName={siteName}
           onChange={() => router.refresh()}
@@ -213,12 +233,43 @@ export default function AdminDashboard({
 
 /* ---------------------------------- Termine --------------------------------- */
 
+// Premium stat card used across the dashboard.
+function StatCard({
+  label,
+  value,
+  unit,
+  icon,
+}: {
+  label: string;
+  value: number | string;
+  unit?: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="card-lift rounded-2xl border border-line bg-background px-5 py-4 shadow-soft">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand">
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            {icon}
+          </svg>
+        </span>
+        {label}
+      </div>
+      <p className="mt-2 font-display text-3xl font-bold leading-none text-foreground">
+        {value}
+      </p>
+      {unit && <p className="mt-1 text-xs text-muted">{unit}</p>}
+    </div>
+  );
+}
+
 function TermineTab({
   appointments,
   services,
   hours,
   timeOff,
   specialDays,
+  waitlist,
   feedUrl,
   siteName,
   onChange,
@@ -228,6 +279,7 @@ function TermineTab({
   hours: DayHours[];
   timeOff: TimeOff[];
   specialDays: SpecialDay[];
+  waitlist: WaitlistItem[];
   feedUrl: string;
   siteName: string;
   onChange: () => void;
@@ -235,6 +287,17 @@ function TermineTab({
   const today = useMemo(() => todayInTz(tz), []);
   const [selected, setSelected] = useState<string>(today);
   const [showForm, setShowForm] = useState(false);
+
+  const waitlistByDay = useMemo(() => {
+    const map = new Map<string, WaitlistItem[]>();
+    for (const w of waitlist) {
+      const key = dateKey(new Date(w.date), tz);
+      const list = map.get(key) ?? [];
+      list.push(w);
+      map.set(key, list);
+    }
+    return map;
+  }, [waitlist]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, Appointment[]>();
@@ -302,18 +365,37 @@ function TermineTab({
   const selectedOff = offReason(selected);
   const selectedClosed = isClosedDay(selected);
   const selectedSpecial = specialByDay.get(selected) ?? null;
+  const selectedWaitlist = waitlistByDay.get(selected) ?? [];
 
   return (
     <div className="mt-6 flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">
-          Heute <span className="font-bold text-brand">{stats.todayCount}</span> ·
-          Diese Woche{" "}
-          <span className="font-bold text-brand">{stats.weekCount}</span>
-        </p>
+      <div className="flex flex-wrap items-stretch justify-between gap-4">
+        <div className="grid flex-1 grid-cols-2 gap-3 sm:max-w-sm">
+          <StatCard
+            label="Heute"
+            value={stats.todayCount}
+            unit="Termine"
+            icon={
+              <>
+                <rect x="3" y="4" width="18" height="17" rx="3" strokeWidth="2" />
+                <path d="M3 9h18M8 2v4M16 2v4" strokeWidth="2" strokeLinecap="round" />
+              </>
+            }
+          />
+          <StatCard
+            label="Diese Woche"
+            value={stats.weekCount}
+            unit="Termine"
+            icon={
+              <>
+                <path d="M4 19V9M10 19V5M16 19v-7M22 19H2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </>
+            }
+          />
+        </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background"
+          className="btn-shine self-end rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03]"
         >
           {showForm ? "Schließen" : "+ Termin einplanen"}
         </button>
@@ -331,7 +413,7 @@ function TermineTab({
       )}
 
       {/* Day header + week strip */}
-      <div className="rounded-2xl border border-line bg-background shadow-sm">
+      <div className="rounded-2xl border border-line bg-background shadow-soft">
         <div className="flex items-center justify-between border-b border-line px-3 py-3">
           <button
             onClick={() => setSelected(addDaysToDateStr(selected, -7))}
@@ -360,6 +442,7 @@ function TermineTab({
             ).length;
             const off = offReason(ds);
             const special = specialByDay.get(ds) ?? null;
+            const wl = (waitlistByDay.get(ds) ?? []).length;
             // An extra working day overrides the "closed" look.
             const closed = isClosedDay(ds) && !special;
             return (
@@ -401,17 +484,25 @@ function TermineTab({
                 >
                   {Number(ds.slice(8))}
                 </span>
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    active > 0
-                      ? isToday
-                        ? "bg-red-500"
-                        : "bg-brand"
-                      : special
-                        ? "bg-emerald-400"
-                        : "bg-transparent"
-                  }`}
-                />
+                <span className="flex h-1.5 items-center gap-0.5">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      active > 0
+                        ? isToday
+                          ? "bg-red-500"
+                          : "bg-brand"
+                        : special
+                          ? "bg-emerald-400"
+                          : "bg-transparent"
+                    }`}
+                  />
+                  {wl > 0 && (
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                      title={`${wl} auf Warteliste`}
+                    />
+                  )}
+                </span>
               </button>
             );
           })}
@@ -454,6 +545,14 @@ function TermineTab({
         </ul>
       )}
 
+      {selectedWaitlist.length > 0 && (
+        <WaitlistPanel
+          entries={selectedWaitlist}
+          date={selected}
+          onChange={onChange}
+        />
+      )}
+
       <div>
         <button
           onClick={() => setSelected(today)}
@@ -465,6 +564,155 @@ function TermineTab({
 
       {feedUrl && <FeedBox feedUrl={feedUrl} />}
     </div>
+  );
+}
+
+// Waitlist entries for the selected day, with notify + remove actions.
+function WaitlistPanel({
+  entries,
+  date,
+  onChange,
+}: {
+  entries: WaitlistItem[];
+  date: string;
+  onChange: () => void;
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const pending = entries.filter((e) => !e.notifiedAt).length;
+
+  async function notify(id: string) {
+    setBusyId(id);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/admin/waitlist/${id}`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg({ ok: false, text: data.error ?? "Konnte nicht senden." });
+      }
+      onChange();
+    } finally {
+      setBusyId(null);
+    }
+  }
+  async function notifyAll() {
+    setBulkBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/waitlist/notify-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMsg({
+          ok: data.failed === 0,
+          text:
+            `${data.sent} benachrichtigt` +
+            (data.failed ? `, ${data.failed} fehlgeschlagen (Resend-Domain prüfen)` : ""),
+        });
+      } else {
+        setMsg({ ok: false, text: data.error ?? "Konnte nicht senden." });
+      }
+      onChange();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+  async function remove(id: string) {
+    setBusyId(id);
+    try {
+      await fetch(`/api/admin/waitlist/${id}`, { method: "DELETE" });
+      onChange();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand">
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <circle cx="12" cy="12" r="9" strokeWidth="2" />
+              <path d="M12 7v5l3 2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <h3 className="text-sm font-bold">
+            Warteliste <span className="text-muted">({entries.length})</span>
+          </h3>
+        </div>
+        {pending > 0 && (
+          <button
+            disabled={bulkBusy}
+            onClick={notifyAll}
+            className="btn-shine rounded-full bg-brand px-4 py-2 text-xs font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03] disabled:opacity-50"
+          >
+            {bulkBusy ? "Wird gesendet…" : `Alle benachrichtigen (${pending})`}
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-muted">
+        Wird ein Termin frei: „Alle benachrichtigen“ mailt allen Wartenden des
+        Tages gleichzeitig.
+      </p>
+      {msg && (
+        <p
+          className={`mt-3 rounded-lg px-3 py-2 text-xs font-medium ${
+            msg.ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+          }`}
+        >
+          {msg.text}
+        </p>
+      )}
+      <ul className="mt-4 flex flex-col gap-2.5">
+        {entries.map((w) => (
+          <li
+            key={w.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface px-4 py-3"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">
+                {w.customerName}
+                <span className="ml-2 font-normal text-muted">{w.serviceName}</span>
+              </p>
+              <a
+                href={`mailto:${w.customerEmail}`}
+                className="text-xs text-muted underline underline-offset-2 hover:text-foreground"
+              >
+                {w.customerEmail}
+              </a>
+            </div>
+            <div className="flex items-center gap-2">
+              {w.notifiedAt ? (
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+                  benachrichtigt
+                </span>
+              ) : (
+                <button
+                  disabled={busyId === w.id}
+                  onClick={() => notify(w.id)}
+                  className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white transition-transform hover:scale-[1.03] disabled:opacity-50"
+                >
+                  Benachrichtigen
+                </button>
+              )}
+              <button
+                disabled={busyId === w.id}
+                onClick={() => remove(w.id)}
+                className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-red-400 hover:text-red-600 disabled:opacity-50"
+              >
+                Entfernen
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -481,7 +729,7 @@ function AgendaCard({
   const [busy, setBusy] = useState(false);
   const cancelled = a.status === "CANCELLED";
   const noShow = a.status === "NO_SHOW";
-  const isPast = new Date(a.start).getTime() < Date.now();
+  const isPast = new Date(a.start).getTime() < nowMs();
   const bar = cancelled
     ? "bg-stone-300"
     : noShow
@@ -515,12 +763,12 @@ function AgendaCard({
   });
 
   return (
-    <li className="overflow-hidden rounded-2xl border border-line bg-background shadow-sm">
+    <li className="card-lift overflow-hidden rounded-2xl border border-line bg-background shadow-soft">
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-stretch text-left"
       >
-        <span className={`w-1.5 shrink-0 ${bar}`} aria-hidden />
+        <span className={`w-2 shrink-0 ${bar}`} aria-hidden />
         <span className="flex flex-1 items-center justify-between gap-3 px-4 py-3">
           <span className="min-w-0">
             <span
@@ -689,7 +937,7 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
         </p>
         <p className="mt-1 text-xs text-orange-700/80">
           Entgangener Umsatz: {priceFull(revenue.noShowCents)}. Markiere einen
-          vergangenen Termin als „Nicht erschienen", damit er hier zählt.
+          vergangenen Termin als „Nicht erschienen“, damit er hier zählt.
         </p>
       </div>
     </div>
@@ -698,7 +946,7 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
 
 function RevenueStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-line bg-background p-4 shadow-sm">
+    <div className="rounded-2xl border border-line bg-background p-4 shadow-soft">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
         {label}
       </p>
@@ -716,7 +964,7 @@ function BarChart({
 }) {
   const max = Math.max(1, ...data.map((d) => d.cents));
   return (
-    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
       <h2 className="text-sm font-semibold">{title}</h2>
       <div className="mt-4 flex items-end gap-2" style={{ height: "170px" }}>
         {data.map((d, i) => {
@@ -784,6 +1032,9 @@ function ServicesTab({ onChange }: { onChange: () => void }) {
   );
 
   useEffect(() => {
+    // Intentional one-shot data load on mount; the synchronous setState is the
+    // standard fetch-on-mount pattern and does not cause problematic cascades.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -828,7 +1079,7 @@ function ServicesTab({ onChange }: { onChange: () => void }) {
           {services.map((s) => (
             <li
               key={s.id}
-              className="overflow-hidden rounded-2xl border border-line bg-background shadow-sm"
+              className="overflow-hidden rounded-2xl border border-line bg-background shadow-soft"
             >
               {editing === s.id ? (
                 <div className="p-4">
@@ -1008,7 +1259,7 @@ function ServiceForm({
       className={
         service
           ? ""
-          : "rounded-2xl border border-line bg-background p-5 shadow-sm"
+          : "rounded-2xl border border-line bg-background p-5 shadow-soft"
       }
     >
       {!service && <h3 className="text-sm font-semibold">Neuer Service</h3>}
@@ -1110,6 +1361,8 @@ function KundenTab({
 
   useEffect(() => {
     let cancelled = false;
+    // Intentional one-shot data load on mount (see note above).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetch("/api/admin/customers")
       .then((r) => r.json())
@@ -1364,7 +1617,7 @@ function ScheduleForm({
   return (
     <form
       onSubmit={submit}
-      className="rounded-2xl border border-line bg-background p-5 shadow-sm"
+      className="rounded-2xl border border-line bg-background p-5 shadow-soft"
     >
       <h3 className="text-sm font-semibold">Termin einplanen</h3>
 
@@ -1550,7 +1803,7 @@ function BookingWindowCard({
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
       <h2 className="text-sm font-semibold">Buchungszeitraum</h2>
       <p className="mt-1 text-xs text-muted">
         Wie viele Tage im Voraus Kunden online buchen können.
@@ -1621,7 +1874,7 @@ function RemindersCard({
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
       <h2 className="text-sm font-semibold">Erinnerungen</h2>
       <p className="mt-1 text-xs text-muted">
         Automatische Erinnerungs-E-Mail an Kunden vor dem Termin.
@@ -1710,7 +1963,7 @@ function HoursCard({
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
       <h2 className="text-sm font-semibold">Öffnungszeiten</h2>
       <p className="mt-1 text-xs text-muted">
         Uhrzeiten im 24-Stunden-Format (z. B. 09:00–18:00).
@@ -1863,10 +2116,10 @@ function TimeOffCard({
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
       <h2 className="text-sm font-semibold">Freie Tage / Urlaub</h2>
       <p className="mt-1 text-xs text-muted">
-        Sperre einen einzelnen Tag (nur „Von") oder einen Zeitraum. An gesperrten
+        Sperre einen einzelnen Tag (nur „Von“) oder einen Zeitraum. An gesperrten
         Tagen sind keine Buchungen möglich.
       </p>
 
@@ -2067,7 +2320,7 @@ function SpecialDaysCard({
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-background p-5 shadow-sm">
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
       <h2 className="text-sm font-semibold">Extra-Arbeitstage</h2>
       <p className="mt-1 text-xs text-muted">
         Öffne einen einzelnen Tag, der laut Öffnungszeiten eigentlich zu ist –

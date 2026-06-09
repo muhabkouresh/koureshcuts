@@ -82,6 +82,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   const [result, setResult] = useState<BookingResult | null>(null);
 
   // Load slots whenever the selected day changes.
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional fetch-on-change loading state */
   useEffect(() => {
     if (!service || !date) {
       setSlots([]);
@@ -174,38 +175,62 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   if (step === "service") {
     return (
       <div className="mx-auto w-full max-w-lg">
-        <h2 className="font-display text-3xl font-bold tracking-tight">Services</h2>
-        <p className="mt-1 text-muted">Wähle den Service, der zu dir passt.</p>
-        <ul className="mt-6 flex flex-col gap-3">
-          {services.map((s, i) => (
-            <li
-              key={s.id}
-              className="flex items-center overflow-hidden rounded-2xl bg-background shadow-sm ring-1 ring-line"
-            >
-              <span
-                className={`h-full w-1.5 self-stretch ${themeFor(i).bar}`}
-                aria-hidden
-              />
-              <div className="flex flex-1 items-center justify-between gap-3 px-4 py-3.5">
-                <div className="min-w-0">
-                  <p className="whitespace-nowrap text-base font-semibold">
-                    {s.name}{" "}
-                    <span className="font-bold">| {priceShort(s.priceCents)}</span>
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted">
-                    Dauer: {s.durationMinutes} Min.
-                  </p>
-                </div>
-                <button
+        <Steps current="service" />
+        <div key="service" className="animate-fade-up">
+          <h2 className="font-display text-3xl font-bold tracking-tight">
+            Services
+          </h2>
+          <p className="mt-1 text-muted">Wähle den Service, der zu dir passt.</p>
+          <ul className="mt-6 flex flex-col gap-3.5">
+            {services.map((s, i) => {
+              const t = themeFor(i);
+              return (
+                <li
+                  key={s.id}
+                  className={`card-lift group flex cursor-pointer items-center overflow-hidden rounded-2xl bg-background shadow-soft ring-1 ring-line transition-shadow ${t.hover} hover:ring-2`}
                   onClick={() => chooseService(s)}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-transform hover:scale-[1.02]"
                 >
-                  Auswählen <span aria-hidden>→</span>
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                  <span
+                    className={`h-full w-2 self-stretch ${t.bar}`}
+                    aria-hidden
+                  />
+                  <div className="flex flex-1 items-center justify-between gap-3 px-5 py-4">
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <span
+                        aria-hidden
+                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-white shadow-sm ${t.solid}`}
+                      >
+                        {s.name.charAt(0).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="whitespace-nowrap text-base font-semibold">
+                          {s.name}{" "}
+                          <span className="font-bold">
+                            | {priceShort(s.priceCents)}
+                          </span>
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          Dauer: {s.durationMinutes} Min.
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm transition-transform group-hover:scale-[1.04] ${t.solid}`}
+                    >
+                      Auswählen{" "}
+                      <span
+                        aria-hidden
+                        className="transition-transform group-hover:translate-x-0.5"
+                      >
+                        →
+                      </span>
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       </div>
     );
   }
@@ -221,6 +246,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
 
   return (
     <div className="mx-auto w-full max-w-2xl">
+      <Steps current={step} />
       {service && (
         <div className="flex items-center gap-4">
           {step !== "done" && (
@@ -241,7 +267,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       )}
 
       {step === "datetime" && service && (
-        <div className="mt-6">
+        <div key="datetime" className="mt-6 animate-fade-up">
           <Calendar
             serviceId={service.id}
             value={date}
@@ -255,9 +281,12 @@ export default function BookingFlow({ services }: { services: Service[] }) {
               {loadingSlots ? (
                 <p className="mt-3 text-sm text-muted">Lädt Zeiten…</p>
               ) : slots.length === 0 ? (
-                <p className="mt-3 text-sm text-muted">
-                  Keine freien Zeiten an diesem Tag. Bitte anderen Tag wählen.
-                </p>
+                <>
+                  <p className="mt-3 text-sm text-muted">
+                    Keine freien Zeiten an diesem Tag.
+                  </p>
+                  <WaitlistBox serviceId={service.id} date={date} />
+                </>
               ) : (
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   {slots.map((s) => {
@@ -292,7 +321,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       )}
 
       {step === "details" && service && slot && (
-        <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
+        <form key="details" onSubmit={submit} className="mt-6 flex animate-fade-up flex-col gap-4">
           <Field
             label="E-Mail *"
             type="email"
@@ -355,9 +384,31 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       )}
 
       {step === "done" && result && (
-        <div className="mt-2 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-2xl text-white">
-            ✓
+        <div key="done" className="mt-2 animate-fade-up text-center">
+          <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
+            <span
+              aria-hidden
+              className="animate-pop-check absolute inset-0 rounded-full bg-emerald-500"
+            />
+            <span
+              aria-hidden
+              className="absolute inset-0 rounded-full bg-emerald-500"
+              style={{ animation: "ring-pulse 1.4s ease-out 0.3s 2" }}
+            />
+            <svg
+              className="animate-pop-check relative h-8 w-8 text-white"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              style={{ animationDelay: "0.1s" }}
+            >
+              <path
+                d="M20 6 9 17l-5-5"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
           <h2 className="mt-6 text-3xl font-bold tracking-tight">
             Termin erfolgreich gebucht
@@ -410,6 +461,166 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   );
 }
 
+// Visual progress indicator across the three booking steps.
+function Steps({ current }: { current: Step }) {
+  const order: Step[] = ["service", "datetime", "details"];
+  const activeIndex = current === "done" ? 3 : order.indexOf(current);
+  const labels = ["Service", "Termin", "Daten"];
+
+  return (
+    <div className="mx-auto mb-8 flex max-w-md items-center justify-between">
+      {labels.map((label, i) => {
+        const done = i < activeIndex;
+        const active = i === activeIndex;
+        return (
+          <div key={label} className="flex flex-1 items-center last:flex-none">
+            <div className="flex flex-col items-center gap-1.5">
+              <div
+                className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ring-1 transition-all duration-300 ${
+                  done
+                    ? "bg-brand text-white ring-brand"
+                    : active
+                      ? "bg-brand-soft text-brand ring-brand"
+                      : "bg-background text-muted ring-line"
+                }`}
+              >
+                {done ? (
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      d="M20 6 9 17l-5-5"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                ) : (
+                  i + 1
+                )}
+              </div>
+              <span
+                className={`text-[11px] font-semibold uppercase tracking-wide transition-colors ${
+                  active || done ? "text-foreground" : "text-muted"
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+            {i < labels.length - 1 && (
+              <div className="mx-2 h-0.5 flex-1 overflow-hidden rounded-full bg-line">
+                <div
+                  className="h-full rounded-full bg-brand transition-all duration-500"
+                  style={{ width: done ? "100%" : "0%" }}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Shown when a chosen day is fully booked — lets the customer join a waitlist.
+function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function join(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId,
+          date,
+          customerName: name,
+          customerEmail: email,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
+        return;
+      }
+      setDone(true);
+    } catch {
+      setError("Netzwerkfehler. Bitte erneut versuchen.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div className="mt-4 animate-fade-up rounded-xl bg-brand-soft px-4 py-4 text-center text-sm font-medium text-brand-700">
+        ✓ Du stehst auf der Warteliste. Wir melden uns per E-Mail, sobald an
+        diesem Tag ein Platz frei wird.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-surface p-4">
+      {!open ? (
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted">
+            Tag ausgebucht? Lass dich benachrichtigen, sobald etwas frei wird.
+          </p>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="btn-shine shrink-0 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.03]"
+          >
+            Auf die Warteliste
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={join} className="flex animate-fade-up flex-col gap-3">
+          <p className="text-sm font-semibold">Warteliste für diesen Tag</p>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="E-Mail"
+            autoComplete="email"
+            className="w-full rounded-xl bg-background px-4 py-3 text-sm outline-none ring-1 ring-line focus:ring-brand"
+          />
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name"
+            autoComplete="name"
+            className="w-full rounded-xl bg-background px-4 py-3 text-sm outline-none ring-1 ring-line focus:ring-brand"
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-full bg-brand py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+          >
+            {submitting ? "Wird eingetragen…" : "Eintragen"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function Calendar({
   serviceId,
   value,
@@ -429,6 +640,7 @@ function Calendar({
   const [year, setYear] = useState(initial.year);
   const [month0, setMonth0] = useState(initial.month0);
   const [available, setAvailable] = useState<Set<number>>(new Set());
+  const [full, setFull] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const isCurrentView =
@@ -443,10 +655,16 @@ function Calendar({
     )
       .then((r) => r.json())
       .then((d) => {
-        if (!cancelled) setAvailable(new Set<number>(d.days ?? []));
+        if (!cancelled) {
+          setAvailable(new Set<number>(d.days ?? []));
+          setFull(new Set<number>(d.full ?? []));
+        }
       })
       .catch(() => {
-        if (!cancelled) setAvailable(new Set());
+        if (!cancelled) {
+          setAvailable(new Set());
+          setFull(new Set());
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -510,32 +728,52 @@ function Calendar({
           if (day === null) return <div key={`b${idx}`} />;
           const dateStr = toDateStr(year, month0, day);
           const enabled = available.has(day);
+          const isFull = full.has(day);
           const selected = value === dateStr;
           return (
             <button
               key={dateStr}
-              disabled={!enabled}
+              disabled={!enabled && !isFull}
               onClick={() => onChange(dateStr)}
-              className={`aspect-square rounded-lg text-sm transition-colors ${
+              title={isFull && !enabled ? "Ausgebucht – Warteliste möglich" : undefined}
+              className={`relative aspect-square rounded-lg text-sm transition-colors ${
                 selected
-                  ? `${accent} font-bold text-white`
+                  ? isFull && !enabled
+                    ? "bg-amber-500 font-bold text-white"
+                    : `${accent} font-bold text-white`
                   : enabled
                     ? "font-semibold text-foreground hover:bg-surface"
-                    : "text-stone-300 line-through"
+                    : isFull
+                      ? "font-semibold text-amber-600 hover:bg-amber-50"
+                      : "text-stone-300 line-through"
               }`}
             >
               {day}
+              {isFull && !enabled && !selected && (
+                <span
+                  aria-hidden
+                  className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-amber-500"
+                />
+              )}
             </button>
           );
         })}
       </div>
 
-      <div className="mt-4 border-t border-line pt-3 text-center text-sm text-muted">
-        {loading
-          ? "Lädt…"
-          : value
-            ? "Wähle eine Uhrzeit."
-            : "Wähle zuerst einen Tag."}
+      <div className="mt-4 space-y-2 border-t border-line pt-3 text-center text-sm text-muted">
+        <p>
+          {loading
+            ? "Lädt…"
+            : value
+              ? "Wähle eine Uhrzeit."
+              : "Wähle zuerst einen Tag."}
+        </p>
+        {full.size > 0 && (
+          <p className="flex items-center justify-center gap-1.5 text-xs">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Ausgebucht — antippen für die Warteliste
+          </p>
+        )}
       </div>
     </div>
   );
