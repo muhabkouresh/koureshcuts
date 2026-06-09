@@ -34,8 +34,10 @@ export default async function CancelPage({
 
         {!appt ? (
           <p className="mt-4 text-sm text-muted">
-            Dieser Stornierungs-Link ist ungültig oder abgelaufen. Bitte ruf uns
-            an: {siteConfig.phone}.
+            Dieser Stornierungs-Link ist ungültig oder abgelaufen.
+            {siteConfig.phone
+              ? ` Bitte ruf uns an: ${siteConfig.phone}.`
+              : " Bitte wende dich direkt an uns, um deinen Termin zu ändern."}
           </p>
         ) : (
           <CancelClient

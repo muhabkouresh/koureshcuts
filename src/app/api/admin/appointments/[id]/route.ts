@@ -1,6 +1,7 @@
 import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { appointmentActionSchema } from "@/lib/validation";
+import { notifyWaitlistForDay } from "@/lib/waitlist";
 
 // PATCH /api/admin/appointments/[id] — update an appointment's status
 // (e.g. CANCELLED, COMPLETED, CONFIRMED).
@@ -35,5 +36,16 @@ export async function PATCH(
     where: { id },
     data: { status: parsed.data.status },
   });
+
+  // If this cancels a previously-active appointment, a spot opened up — auto-
+  // notify anyone on the waitlist for that day.
+  if (parsed.data.status === "CANCELLED" && existing.status !== "CANCELLED") {
+    try {
+      await notifyWaitlistForDay(existing.startTime);
+    } catch (err) {
+      console.error("waitlist auto-notify failed", err);
+    }
+  }
+
   return Response.json({ ok: true });
 }

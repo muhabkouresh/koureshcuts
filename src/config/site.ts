@@ -9,10 +9,10 @@ export const siteConfig = {
   description:
     "Online-Terminbuchung für Kouresh_cuts. Wähle deinen Service, finde einen freien Termin und buche in unter einer Minute.",
 
-  // Contact / location (placeholders — edit these).
-  phone: "+49 000 0000000",
-  // Address of the shop (placeholder).
-  address: "Musterstraße 1, 00000 Musterstadt",
+  // Contact / location (leave empty to hide; fill in with real details later).
+  phone: "",
+  // Address of the shop (leave empty to hide; used as the calendar event location).
+  address: "",
   // Owner inbox that receives a copy of every new booking.
   ownerEmail: "muhabkouresh05@gmail.com",
   // "From" sender shown on customer emails (display name).

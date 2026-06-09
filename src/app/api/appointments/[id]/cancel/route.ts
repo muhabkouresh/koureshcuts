@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { AppointmentStatus } from "@/lib/constants";
 import { verifyCancelToken } from "@/lib/token";
 import { sendCancellationNotice } from "@/lib/email";
+import { notifyWaitlistForDay } from "@/lib/waitlist";
 
 // POST /api/appointments/[id]/cancel?t=<token>
 // Public, token-guarded self-cancellation for customers.
@@ -68,6 +69,13 @@ export async function POST(
     );
   } catch (err) {
     console.error("cancellation notice failed", err);
+  }
+
+  // A spot opened up — auto-notify anyone waiting for this day.
+  try {
+    await notifyWaitlistForDay(appt.startTime);
+  } catch (err) {
+    console.error("waitlist auto-notify failed", err);
   }
 
   return Response.json({ ok: true });
