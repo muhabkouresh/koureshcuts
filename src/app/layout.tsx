@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Oswald } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import { siteConfig } from "@/config/site";
 import PWARegister from "@/components/ui/PWARegister";
 
@@ -77,6 +78,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-page text-foreground">
         {children}
         <PWARegister />
+        <Analytics />
       </body>
     </html>
   );
