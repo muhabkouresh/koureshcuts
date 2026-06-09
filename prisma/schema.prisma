@@ -12,8 +12,11 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Pooled connection (PgBouncer) for serverless runtime.
+  url       = env("DATABASE_URL")
+  // Direct connection for migrations / `prisma db push`.
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 /// A bookable service (haircut, beard trim, etc.).
