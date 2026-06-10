@@ -19,7 +19,15 @@ export type BookingEmailData = {
   end: Date;
 };
 
-const FROM = process.env.FROM_EMAIL || `${siteConfig.name} <onboarding@resend.dev>`;
+// Sender address. Defaults to the configured shop address (siteConfig). A
+// FROM_EMAIL env var may override it, but Resend's test sender
+// (onboarding@resend.dev) is ignored — it can only mail the account owner, so
+// production must never fall back to it.
+const envFrom = process.env.FROM_EMAIL;
+const FROM =
+  envFrom && !envFrom.includes("resend.dev")
+    ? envFrom
+    : `${siteConfig.name} <${siteConfig.email}>`;
 const apiKey = process.env.RESEND_API_KEY;
 const resend = apiKey ? new Resend(apiKey) : null;
 

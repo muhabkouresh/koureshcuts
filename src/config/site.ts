@@ -15,8 +15,8 @@ export const siteConfig = {
   address: "",
   // Owner inbox that receives a copy of every new booking.
   ownerEmail: "muhabkouresh05@gmail.com",
-  // "From" sender shown on customer emails (display name).
-  email: "termine@kouresh-cuts.de",
+  // "From" sender used on all customer emails (verified Resend domain).
+  email: "termine@koureshcuts.de",
 
   // Locale + currency used for all formatting.
   locale: "de-DE",
