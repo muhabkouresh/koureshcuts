@@ -1,0 +1,17 @@
+{
+  "name": "Kouresh_cuts — Termin buchen",
+  "short_name": "Kouresh_cuts",
+  "description": "Online-Terminbuchung für Kouresh_cuts. Wähle deinen Service, finde einen freien Termin und buche in unter einer Minute.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f3f2",
+  "theme_color": "#8a1f2b",
+  "lang": "de",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

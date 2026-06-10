@@ -27,6 +27,7 @@ export const metadata: Metadata = {
   },
   description: siteConfig.description,
   applicationName: siteConfig.name,
+  manifest: "/manifest.webmanifest",
   keywords: [
     "Friseur",
     "Barbershop",
