@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Oswald } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { siteConfig } from "@/config/site";
 import PWARegister from "@/components/ui/PWARegister";
 
@@ -79,6 +80,7 @@ export default function RootLayout({
         {children}
         <PWARegister />
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
