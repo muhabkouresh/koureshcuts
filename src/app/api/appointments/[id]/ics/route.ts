@@ -34,7 +34,13 @@ export async function GET(
   return new Response(ics, {
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="appointment.ics"',
+      // `inline` (not `attachment`) so Apple devices open the "Add to Calendar"
+      // sheet directly instead of silently saving the file to Files. The
+      // `download` attribute on the link forces a proper filename on desktop.
+      "Content-Disposition": 'inline; filename="termin.ics"',
+      // The file is immutable for a given appointment — cache it so repeat taps
+      // never wait on a cold serverless start.
+      "Cache-Control": "public, max-age=3600",
     },
   });
 }

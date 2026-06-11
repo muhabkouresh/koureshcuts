@@ -477,6 +477,9 @@ export default function BookingFlow({ services }: { services: Service[] }) {
             </a>
             <a
               href={result.icsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              download="termin.ics"
               className="w-full rounded-full bg-background py-3.5 text-sm font-medium shadow-sm ring-1 ring-line hover:ring-foreground"
             >
               Apple Kalender
