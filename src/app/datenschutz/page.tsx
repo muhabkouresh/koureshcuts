@@ -8,8 +8,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-// Provisional privacy policy. This is a starting template, NOT legal advice —
-// have it reviewed and complete the bracketed placeholders before going live.
 export default function DatenschutzPage() {
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-5 py-12">
@@ -24,35 +22,9 @@ export default function DatenschutzPage() {
         Datenschutzerklärung
       </h1>
 
-      <p className="mt-3 rounded-lg bg-surface px-4 py-3 text-sm text-muted">
-        Hinweis: Dies ist eine vorläufige Vorlage und keine Rechtsberatung. Bitte
-        vor dem Live-Gang prüfen lassen und die mit [eckigen Klammern]
-        markierten Angaben vervollständigen.
-      </p>
-
       <div className="mt-8 flex flex-col gap-6 text-sm leading-relaxed text-foreground/90">
         <section>
-          <h2 className="text-base font-semibold">1. Verantwortlicher</h2>
-          <p className="mt-2">
-            Verantwortlich für die Datenverarbeitung auf dieser Website ist:
-            <br />
-            {siteConfig.name}
-            <br />
-            [Vor- und Nachname des Inhabers]
-            <br />
-            [Straße und Hausnummer]
-            <br />
-            [PLZ und Ort]
-            <br />
-            E-Mail:{" "}
-            <a className="underline" href={`mailto:${siteConfig.ownerEmail}`}>
-              {siteConfig.ownerEmail}
-            </a>
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-base font-semibold">2. Verarbeitete Daten</h2>
+          <h2 className="text-base font-semibold">1. Verarbeitete Daten</h2>
           <p className="mt-2">
             Bei Nutzung dieser Buchungswebsite können insbesondere folgende
             Daten verarbeitet werden:
@@ -70,7 +42,7 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-base font-semibold">3. Zweck der Verarbeitung</h2>
+          <h2 className="text-base font-semibold">2. Zweck der Verarbeitung</h2>
           <p className="mt-2">Die Datenverarbeitung erfolgt zur:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li>Bearbeitung von Terminanfragen und Buchungen</li>
@@ -80,7 +52,7 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-base font-semibold">4. Rechtsgrundlagen</h2>
+          <h2 className="text-base font-semibold">3. Rechtsgrundlagen</h2>
           <p className="mt-2">
             Rechtsgrundlagen der Verarbeitung sind insbesondere Art. 6 Abs. 1
             lit. b DSGVO (Vertragserfüllung) und Art. 6 Abs. 1 lit. f DSGVO
@@ -89,7 +61,7 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-base font-semibold">5. Speicherdauer</h2>
+          <h2 className="text-base font-semibold">4. Speicherdauer</h2>
           <p className="mt-2">
             Personenbezogene Daten werden nur so lange gespeichert, wie es für
             die jeweiligen Zwecke erforderlich ist oder gesetzliche
@@ -99,7 +71,7 @@ export default function DatenschutzPage() {
 
         <section>
           <h2 className="text-base font-semibold">
-            6. Rechte der betroffenen Personen
+            5. Rechte der betroffenen Personen
           </h2>
           <p className="mt-2">
             Betroffene Personen haben insbesondere folgende Rechte:
@@ -112,16 +84,11 @@ export default function DatenschutzPage() {
             <li>Recht auf Datenübertragbarkeit (Art. 20 DSGVO)</li>
             <li>Recht auf Widerspruch (Art. 21 DSGVO)</li>
           </ul>
-          <p className="mt-2">
-            Außerdem besteht ein Beschwerderecht bei einer
-            Datenschutz-Aufsichtsbehörde. Zur Ausübung dieser Rechte genügt eine
-            Nachricht an die oben genannte Kontaktadresse.
-          </p>
         </section>
 
         <section>
           <h2 className="text-base font-semibold">
-            7. Einsatz von Dienstleistern / Plattform
+            6. Einsatz von Dienstleistern / Plattform
           </h2>
           <p className="mt-2">
             Diese Buchungswebsite wird über einen technischen Dienstleister
@@ -130,25 +97,7 @@ export default function DatenschutzPage() {
             Seitenbetreiber bleibt verantwortlich für die Inhalte und
             Rechtstexte dieser Seite.
           </p>
-          <p className="mt-2">
-            Im Einzelnen kommen folgende Dienste zum Einsatz: Das Hosting
-            erfolgt über <strong>Vercel</strong>; der Versand von Bestätigungs-
-            und Erinnerungs-E-Mails über <strong>Resend</strong> (Resend, Inc.,
-            USA). Dabei werden ausschließlich die zur jeweiligen Funktion nötigen
-            Daten (z. B. E-Mail-Adresse, Termindaten, Server-Logdaten)
-            verarbeitet.
-          </p>
         </section>
-
-        <section>
-          <h2 className="text-base font-semibold">8. Keine Zahlungsdaten</h2>
-          <p className="mt-2">
-            Die Bezahlung erfolgt vor Ort. Über diese Website werden keine
-            Zahlungsdaten erhoben oder verarbeitet.
-          </p>
-        </section>
-
-        <p className="text-xs text-muted">Stand: Juni 2026</p>
       </div>
     </main>
   );
