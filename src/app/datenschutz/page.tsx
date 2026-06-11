@@ -52,74 +52,103 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-base font-semibold">
-            2. Verarbeitung bei der Terminbuchung
-          </h2>
+          <h2 className="text-base font-semibold">2. Verarbeitete Daten</h2>
           <p className="mt-2">
-            Wenn du online einen Termin buchst, verarbeiten wir die von dir
-            angegebenen Daten: <strong>Name</strong>, <strong>E-Mail-Adresse</strong>{" "}
-            sowie eine optionale <strong>Terminnotiz</strong>. Diese Daten nutzen
-            wir ausschließlich, um deinen Termin zu verwalten, dir eine
-            Bestätigung und ggf. eine Erinnerung zu senden und den Termin
-            durchzuführen.
+            Bei Nutzung dieser Buchungswebsite können insbesondere folgende
+            Daten verarbeitet werden:
           </p>
-          <p className="mt-2">
-            Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Durchführung
-            vorvertraglicher bzw. vertraglicher Maßnahmen) sowie unser
-            berechtigtes Interesse an einer reibungslosen Terminorganisation
-            (Art. 6 Abs. 1 lit. f DSGVO).
-          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>
+              Kontakt- und Buchungsdaten (z. B. Name, E-Mail-Adresse,
+              Telefonnummer, gewünschter Termin)
+            </li>
+            <li>
+              Technische Daten (z. B. IP-Adresse, Datum und Uhrzeit des
+              Zugriffs)
+            </li>
+          </ul>
         </section>
 
         <section>
-          <h2 className="text-base font-semibold">3. E-Mail-Versand</h2>
-          <p className="mt-2">
-            Für den Versand von Bestätigungs- und Erinnerungs-E-Mails nutzen wir
-            den Dienstleister <strong>Resend</strong> (Resend, Inc., USA). Dabei
-            werden deine E-Mail-Adresse und die Termindaten an diesen Anbieter
-            übermittelt, ausschließlich zum Zweck des E-Mail-Versands.
-          </p>
+          <h2 className="text-base font-semibold">3. Zweck der Verarbeitung</h2>
+          <p className="mt-2">Die Datenverarbeitung erfolgt zur:</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>Bearbeitung von Terminanfragen und Buchungen</li>
+            <li>Kommunikation mit Kundinnen und Kunden</li>
+            <li>Erfüllung vertraglicher und vorvertraglicher Pflichten</li>
+          </ul>
         </section>
 
         <section>
-          <h2 className="text-base font-semibold">4. Hosting</h2>
+          <h2 className="text-base font-semibold">4. Rechtsgrundlagen</h2>
           <p className="mt-2">
-            Diese Website wird bei <strong>[Hosting-Anbieter, z. B. Vercel]</strong>{" "}
-            gehostet. Beim Aufruf der Seite werden technisch notwendige
-            Server-Logdaten (z. B. IP-Adresse, Zeitpunkt des Zugriffs)
-            verarbeitet, um den Betrieb und die Sicherheit zu gewährleisten.
+            Rechtsgrundlagen der Verarbeitung sind insbesondere Art. 6 Abs. 1
+            lit. b DSGVO (Vertragserfüllung) und Art. 6 Abs. 1 lit. f DSGVO
+            (berechtigtes Interesse).
           </p>
         </section>
 
         <section>
           <h2 className="text-base font-semibold">5. Speicherdauer</h2>
           <p className="mt-2">
-            Termindaten werden gespeichert, solange dies für die
-            Terminabwicklung erforderlich ist und anschließend im Rahmen
-            gesetzlicher Aufbewahrungsfristen. Danach werden sie gelöscht.
+            Personenbezogene Daten werden nur so lange gespeichert, wie es für
+            die jeweiligen Zwecke erforderlich ist oder gesetzliche
+            Aufbewahrungspflichten bestehen.
           </p>
         </section>
 
         <section>
-          <h2 className="text-base font-semibold">6. Deine Rechte</h2>
+          <h2 className="text-base font-semibold">
+            6. Rechte der betroffenen Personen
+          </h2>
           <p className="mt-2">
-            Du hast das Recht auf Auskunft, Berichtigung, Löschung,
-            Einschränkung der Verarbeitung, Datenübertragbarkeit sowie
-            Widerspruch. Außerdem kannst du dich bei einer
-            Datenschutz-Aufsichtsbehörde beschweren. Wende dich dazu an die oben
-            genannte Kontaktadresse.
+            Betroffene Personen haben insbesondere folgende Rechte:
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>Recht auf Auskunft (Art. 15 DSGVO)</li>
+            <li>Recht auf Berichtigung (Art. 16 DSGVO)</li>
+            <li>Recht auf Löschung (Art. 17 DSGVO)</li>
+            <li>Recht auf Einschränkung der Verarbeitung (Art. 18 DSGVO)</li>
+            <li>Recht auf Datenübertragbarkeit (Art. 20 DSGVO)</li>
+            <li>Recht auf Widerspruch (Art. 21 DSGVO)</li>
+          </ul>
+          <p className="mt-2">
+            Außerdem besteht ein Beschwerderecht bei einer
+            Datenschutz-Aufsichtsbehörde. Zur Ausübung dieser Rechte genügt eine
+            Nachricht an die oben genannte Kontaktadresse.
           </p>
         </section>
 
         <section>
-          <h2 className="text-base font-semibold">7. Keine Zahlungsdaten</h2>
+          <h2 className="text-base font-semibold">
+            7. Einsatz von Dienstleistern / Plattform
+          </h2>
+          <p className="mt-2">
+            Diese Buchungswebsite wird über einen technischen Dienstleister
+            betrieben. Der Dienstleister stellt lediglich die Plattform bereit
+            und verarbeitet Daten im Auftrag des Seitenbetreibers. Der
+            Seitenbetreiber bleibt verantwortlich für die Inhalte und
+            Rechtstexte dieser Seite.
+          </p>
+          <p className="mt-2">
+            Im Einzelnen kommen folgende Dienste zum Einsatz: Das Hosting
+            erfolgt über <strong>Vercel</strong>; der Versand von Bestätigungs-
+            und Erinnerungs-E-Mails über <strong>Resend</strong> (Resend, Inc.,
+            USA). Dabei werden ausschließlich die zur jeweiligen Funktion nötigen
+            Daten (z. B. E-Mail-Adresse, Termindaten, Server-Logdaten)
+            verarbeitet.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-base font-semibold">8. Keine Zahlungsdaten</h2>
           <p className="mt-2">
             Die Bezahlung erfolgt vor Ort. Über diese Website werden keine
             Zahlungsdaten erhoben oder verarbeitet.
           </p>
         </section>
 
-        <p className="text-xs text-muted">Stand: [Datum eintragen]</p>
+        <p className="text-xs text-muted">Stand: Juni 2026</p>
       </div>
     </main>
   );

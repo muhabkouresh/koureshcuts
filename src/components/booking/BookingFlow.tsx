@@ -65,6 +65,29 @@ function themeFor(i: number) {
   return SERVICE_THEMES[i % SERVICE_THEMES.length];
 }
 
+// Shared month-availability cache so the calendar shows instantly when a service
+// is picked. We still re-fetch (no-store) on mount to stay fresh — the cache only
+// removes the perceived wait; admin changes (time-off, hours) still show up.
+type MonthData = { days: number[]; full: number[] };
+const monthCache = new Map<string, MonthData>();
+const monthKey = (serviceId: string, year: number, month0: number) =>
+  `${serviceId}:${year}:${month0}`;
+
+async function fetchMonth(
+  serviceId: string,
+  year: number,
+  month0: number,
+): Promise<MonthData> {
+  const res = await fetch(
+    `/api/availability/month?serviceId=${serviceId}&year=${year}&month=${month0}`,
+    { cache: "no-store" },
+  );
+  const d = await res.json();
+  const data: MonthData = { days: d.days ?? [], full: d.full ?? [] };
+  monthCache.set(monthKey(serviceId, year, month0), data);
+  return data;
+}
+
 export default function BookingFlow({ services }: { services: Service[] }) {
   const [step, setStep] = useState<Step>("service");
   const [service, setService] = useState<Service | null>(null);
@@ -80,6 +103,16 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BookingResult | null>(null);
+
+  // Prefetch the current month's availability for every service as soon as the
+  // booking section renders, so picking a service shows the calendar instantly.
+  useEffect(() => {
+    const today = todayInTz(tz);
+    const [y, m] = today.split("-").map(Number);
+    for (const s of services) {
+      void fetchMonth(s.id, y, m - 1).catch(() => {});
+    }
+  }, [services]);
 
   // Load slots whenever the selected day changes.
   /* eslint-disable react-hooks/set-state-in-effect -- intentional fetch-on-change loading state */
@@ -639,29 +672,36 @@ function Calendar({
   }, []);
   const [year, setYear] = useState(initial.year);
   const [month0, setMonth0] = useState(initial.month0);
-  const [available, setAvailable] = useState<Set<number>>(new Set());
-  const [full, setFull] = useState<Set<number>>(new Set());
-  const [loading, setLoading] = useState(true);
+  const seed = monthCache.get(monthKey(serviceId, initial.year, initial.month0));
+  const [available, setAvailable] = useState<Set<number>>(
+    () => new Set(seed?.days ?? []),
+  );
+  const [full, setFull] = useState<Set<number>>(() => new Set(seed?.full ?? []));
+  const [loading, setLoading] = useState(!seed);
 
   const isCurrentView =
     year === initial.year && month0 === initial.month0;
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    fetch(
-      `/api/availability/month?serviceId=${serviceId}&year=${year}&month=${month0}`,
-      { cache: "no-store" },
-    )
-      .then((r) => r.json())
+    const cached = monthCache.get(monthKey(serviceId, year, month0));
+    if (cached) {
+      // Show the cached month instantly; revalidate silently below.
+      setAvailable(new Set(cached.days));
+      setFull(new Set(cached.full));
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    fetchMonth(serviceId, year, month0)
       .then((d) => {
         if (!cancelled) {
-          setAvailable(new Set<number>(d.days ?? []));
-          setFull(new Set<number>(d.full ?? []));
+          setAvailable(new Set(d.days));
+          setFull(new Set(d.full));
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!cancelled && !cached) {
           setAvailable(new Set());
           setFull(new Set());
         }

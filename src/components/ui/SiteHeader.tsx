@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { siteConfig } from "@/config/site";
+import ScrollLink from "@/components/ui/ScrollLink";
 
 /**
  * Sticky top bar. Transparent over the hero, then fades in a frosted
@@ -27,7 +27,7 @@ export default function SiteHeader() {
       }`}
     >
       <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3">
-        <Link href="#top" className="flex items-center gap-2.5">
+        <ScrollLink targetId="top" className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo.png"
@@ -37,14 +37,14 @@ export default function SiteHeader() {
           <span className="font-display text-lg font-bold tracking-tight">
             {siteConfig.name}
           </span>
-        </Link>
+        </ScrollLink>
 
-        <Link
-          href="#book"
+        <ScrollLink
+          targetId="book"
           className="btn-shine rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03]"
         >
           Termin buchen
-        </Link>
+        </ScrollLink>
       </div>
     </header>
   );

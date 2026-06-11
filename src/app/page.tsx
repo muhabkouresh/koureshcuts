@@ -4,6 +4,7 @@ import { siteConfig } from "@/config/site";
 import BookingFlow, { type Service } from "@/components/booking/BookingFlow";
 import SiteHeader from "@/components/ui/SiteHeader";
 import Reveal from "@/components/ui/Reveal";
+import ScrollLink from "@/components/ui/ScrollLink";
 
 export const dynamic = "force-dynamic";
 
@@ -90,12 +91,12 @@ export default async function Home() {
           </p>
 
           <div className="animate-fade-up delay-3 mt-10 flex flex-col items-center gap-4 sm:flex-row">
-            <Link
-              href="#book"
+            <ScrollLink
+              targetId="book"
               className="btn-shine rounded-full bg-brand px-9 py-4 text-base font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03]"
             >
               Service auswählen
-            </Link>
+            </ScrollLink>
             <span className="text-sm text-muted">
               Sofortige Bestätigung · keine Wartezeit
             </span>
