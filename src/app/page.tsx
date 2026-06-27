@@ -6,7 +6,11 @@ import SiteHeader from "@/components/ui/SiteHeader";
 import Reveal from "@/components/ui/Reveal";
 import ScrollLink from "@/components/ui/ScrollLink";
 
-export const dynamic = "force-dynamic";
+// Serve the landing shell from cache and refresh it in the background every
+// 60s (ISR) instead of hitting Neon on every visit (force-dynamic). Services
+// change rarely; live availability is fetched client-side (no-store) anyway,
+// so this only speeds up the first paint without staleness where it matters.
+export const revalidate = 60;
 
 const BENEFITS = [
   {
