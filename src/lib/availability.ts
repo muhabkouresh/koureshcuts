@@ -2,7 +2,7 @@ import type { Service, BusinessHours, Appointment } from "@prisma/client";
 import { prisma } from "./prisma";
 import { siteConfig } from "@/config/site";
 import { getSettings } from "./settings";
-import { ACTIVE_STATUSES, SLOT_INTERVAL_MINUTES } from "./constants";
+import { BUSY_STATUSES, SLOT_INTERVAL_MINUTES } from "./constants";
 import {
   daysInMonth,
   isValidDateStr,
@@ -137,7 +137,7 @@ export async function getAvailability(
       }),
       prisma.appointment.findMany({
         where: {
-          status: { in: ACTIVE_STATUSES },
+          status: { in: BUSY_STATUSES },
           startTime: { lt: dayEndUtc },
           endTime: { gt: dayStartUtc },
         },
@@ -198,7 +198,7 @@ export async function getMonthAvailability(
       }),
       prisma.appointment.findMany({
         where: {
-          status: { in: ACTIVE_STATUSES },
+          status: { in: BUSY_STATUSES },
           startTime: { lt: monthEndUtc },
           endTime: { gt: monthStartUtc },
         },

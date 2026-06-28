@@ -1,6 +1,6 @@
 import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ACTIVE_STATUSES, AppointmentStatus } from "@/lib/constants";
+import { BUSY_STATUSES, AppointmentStatus } from "@/lib/constants";
 import { adminCreateAppointmentSchema } from "@/lib/validation";
 import { sendConfirmationEmails } from "@/lib/email";
 
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     const created = await prisma.$transaction(async (tx) => {
       const clash = await tx.appointment.findFirst({
         where: {
-          status: { in: ACTIVE_STATUSES },
+          status: { in: BUSY_STATUSES },
           startTime: { lt: end },
           endTime: { gt: start },
         },

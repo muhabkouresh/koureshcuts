@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { formatInTimeZone } from "date-fns-tz";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
-import { ACTIVE_STATUSES, AppointmentStatus } from "@/lib/constants";
+import { BUSY_STATUSES, AppointmentStatus } from "@/lib/constants";
 import { createAppointmentSchema } from "@/lib/validation";
 import { getAvailability } from "@/lib/availability";
 import { sendConfirmationEmails } from "@/lib/email";
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     const created = await prisma.$transaction(async (tx) => {
       const clash = await tx.appointment.findFirst({
         where: {
-          status: { in: ACTIVE_STATUSES },
+          status: { in: BUSY_STATUSES },
           startTime: { lt: end },
           endTime: { gt: start },
         },

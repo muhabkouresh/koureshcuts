@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { priceShort, priceFull } from "@/lib/format";
 import { googleCalUrl } from "@/lib/gcal";
+import { SLOT_INTERVAL_MINUTES } from "@/lib/constants";
 import type { RevenueStats } from "@/lib/revenue";
 import DatePicker from "./DatePicker";
 import {
@@ -287,6 +288,8 @@ function TermineTab({
   const today = useMemo(() => todayInTz(tz), []);
   const [selected, setSelected] = useState<string>(today);
   const [showForm, setShowForm] = useState(false);
+  // When "Besetzen" is chosen for a specific free slot, prefill the form's time.
+  const [formTime, setFormTime] = useState<string | undefined>(undefined);
 
   const waitlistByDay = useMemo(() => {
     const map = new Map<string, WaitlistItem[]>();
@@ -348,9 +351,11 @@ function TermineTab({
   }, [selected]);
 
   const stats = useMemo(() => {
-    const active = appointments.filter((a) => a.status !== "CANCELLED");
+    const active = appointments.filter(
+      (a) => a.status !== "CANCELLED" && a.status !== "BLOCKED",
+    );
     const todayCount = (byDay.get(today) ?? []).filter(
-      (a) => a.status !== "CANCELLED",
+      (a) => a.status !== "CANCELLED" && a.status !== "BLOCKED",
     ).length;
     const weekStart = zonedToUtc(weekDays[0], 0, tz).getTime();
     const weekEnd = weekStart + 7 * 24 * 60 * 60_000;
@@ -366,6 +371,9 @@ function TermineTab({
   const selectedClosed = isClosedDay(selected);
   const selectedSpecial = specialByDay.get(selected) ?? null;
   const selectedWaitlist = waitlistByDay.get(selected) ?? [];
+  // Real bookings shown in the agenda list (manual blocks live in the slot grid).
+  const realAppts = selectedList.filter((a) => a.status !== "BLOCKED");
+  const dayOpen = !selectedOff && (selectedSpecial !== null || !selectedClosed);
 
   return (
     <div className="mt-6 flex flex-col gap-5">
@@ -394,7 +402,10 @@ function TermineTab({
           />
         </div>
         <button
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => {
+            setFormTime(undefined);
+            setShowForm((v) => !v);
+          }}
           className="btn-shine self-end rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03]"
         >
           {showForm ? "Schließen" : "+ Termin einplanen"}
@@ -403,10 +414,13 @@ function TermineTab({
 
       {showForm && (
         <ScheduleForm
+          key={formTime ?? "manual"}
           services={services}
           defaultDate={selected}
+          defaultTime={formTime}
           onDone={() => {
             setShowForm(false);
+            setFormTime(undefined);
             onChange();
           }}
         />
@@ -438,7 +452,7 @@ function TermineTab({
             const isToday = ds === today;
             const isSel = ds === selected;
             const active = (byDay.get(ds) ?? []).filter(
-              (a) => a.status !== "CANCELLED",
+              (a) => a.status !== "CANCELLED" && a.status !== "BLOCKED",
             ).length;
             const off = offReason(ds);
             const special = specialByDay.get(ds) ?? null;
@@ -528,13 +542,27 @@ function TermineTab({
         </p>
       )}
 
-      {selectedList.length === 0 ? (
+      {dayOpen && (
+        <DaySlots
+          date={selected}
+          hours={hours}
+          special={selectedSpecial}
+          appointments={selectedList}
+          onChange={onChange}
+          onBesetzen={(hhmm) => {
+            setFormTime(hhmm);
+            setShowForm(true);
+          }}
+        />
+      )}
+
+      {realAppts.length === 0 ? (
         <p className="rounded-2xl bg-surface px-4 py-6 text-center text-sm text-muted">
           Keine Termine an diesem Tag.
         </p>
       ) : (
         <ul className="flex flex-col gap-2.5">
-          {selectedList.map((a) => (
+          {realAppts.map((a) => (
             <AgendaCard
               key={a.id}
               appt={a}
@@ -713,6 +741,215 @@ function WaitlistPanel({
         ))}
       </ul>
     </section>
+  );
+}
+
+// Grid of the selected day's 30-minute slots. Free slots can be tapped to
+// choose "Sperren" (manual block — no customer, no revenue) or "Besetzen" (open
+// the manual-booking form prefilled with that time). Blocked slots can be freed.
+function DaySlots({
+  date,
+  hours,
+  special,
+  appointments,
+  onChange,
+  onBesetzen,
+}: {
+  date: string;
+  hours: DayHours[];
+  special: SpecialDay | null;
+  appointments: Appointment[];
+  onChange: () => void;
+  onBesetzen: (hhmm: string) => void;
+}) {
+  const [sel, setSel] = useState<{
+    hhmm: string;
+    kind: "free" | "blocked";
+    apptId?: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const dayHours = hours.find((h) => h.dayOfWeek === weekdayOf(date));
+  const openMin = special ? special.openMinute : (dayHours?.openMinute ?? 0);
+  const closeMin = special ? special.closeMinute : (dayHours?.closeMinute ?? 0);
+
+  type SlotCell = {
+    hhmm: string;
+    startMs: number;
+    state: "free" | "blocked" | "booked";
+    apptId?: string;
+    label?: string;
+  };
+  const cells: SlotCell[] = [];
+  for (
+    let m = openMin;
+    m + SLOT_INTERVAL_MINUTES <= closeMin;
+    m += SLOT_INTERVAL_MINUTES
+  ) {
+    const start = zonedToUtc(date, m, tz);
+    const endMs = start.getTime() + SLOT_INTERVAL_MINUTES * 60_000;
+    const startMs = start.getTime();
+    const appt = appointments.find(
+      (a) =>
+        a.status !== "CANCELLED" &&
+        a.status !== "NO_SHOW" &&
+        new Date(a.start).getTime() < endMs &&
+        new Date(a.end).getTime() > startMs,
+    );
+    const hhmm = minutesToHHMM(m);
+    if (!appt) cells.push({ hhmm, startMs, state: "free" });
+    else if (appt.status === "BLOCKED")
+      cells.push({ hhmm, startMs, state: "blocked", apptId: appt.id });
+    else cells.push({ hhmm, startMs, state: "booked", label: appt.customerName });
+  }
+
+  if (cells.length === 0) return null;
+
+  async function block(hhmm: string) {
+    setBusy(true);
+    try {
+      const start = zonedToUtc(date, hhmmToMinutes(hhmm), tz).toISOString();
+      await fetch("/api/admin/appointments/block", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start }),
+      });
+      setSel(null);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function freeBlock(apptId: string) {
+    setBusy(true);
+    try {
+      await fetch(`/api/admin/appointments/${apptId}`, { method: "DELETE" });
+      setSel(null);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const nowVal = nowMs();
+
+  return (
+    <div className="rounded-2xl border border-line bg-background p-4 shadow-soft">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-muted">
+          Freie Zeiten verwalten
+        </h3>
+        <span className="hidden text-xs text-muted sm:block">
+          Antippen: sperren oder besetzen
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+        {cells.map((c) => {
+          const past = c.startMs < nowVal;
+          const isSel = sel?.hhmm === c.hhmm;
+          if (c.state === "booked") {
+            return (
+              <div
+                key={c.hhmm}
+                title={c.label}
+                className="rounded-xl bg-surface px-2 py-2 text-center ring-1 ring-line"
+              >
+                <span className="block text-xs font-semibold tabular-nums text-muted">
+                  {c.hhmm}
+                </span>
+                <span className="block truncate text-[10px] text-muted">
+                  {c.label}
+                </span>
+              </div>
+            );
+          }
+          if (c.state === "blocked") {
+            return (
+              <button
+                key={c.hhmm}
+                onClick={() =>
+                  setSel(
+                    isSel
+                      ? null
+                      : { hhmm: c.hhmm, kind: "blocked", apptId: c.apptId },
+                  )
+                }
+                className={`rounded-xl px-2 py-2 text-center text-xs ring-1 transition-colors ${
+                  isSel
+                    ? "bg-stone-700 text-white ring-stone-700"
+                    : "bg-stone-100 text-stone-500 ring-stone-200 hover:ring-stone-400"
+                }`}
+              >
+                <span className="block font-semibold tabular-nums">
+                  {c.hhmm}
+                </span>
+                <span className="block text-[10px]">Gesperrt</span>
+              </button>
+            );
+          }
+          return (
+            <button
+              key={c.hhmm}
+              disabled={past}
+              onClick={() =>
+                setSel(isSel ? null : { hhmm: c.hhmm, kind: "free" })
+              }
+              className={`rounded-xl px-2 py-3 text-center text-sm font-semibold tabular-nums ring-1 transition-colors ${
+                past
+                  ? "cursor-not-allowed bg-background text-stone-300 ring-line"
+                  : isSel
+                    ? "bg-brand text-white ring-brand"
+                    : "bg-background text-foreground ring-line hover:ring-brand"
+              }`}
+            >
+              {c.hhmm}
+            </button>
+          );
+        })}
+      </div>
+
+      {sel && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-surface px-3 py-2.5 text-sm">
+          <span className="font-semibold tabular-nums">{sel.hhmm} Uhr</span>
+          {sel.kind === "free" ? (
+            <>
+              <button
+                disabled={busy}
+                onClick={() => block(sel.hhmm)}
+                className="rounded-lg bg-stone-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
+              >
+                🔒 Sperren
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  onBesetzen(sel.hhmm);
+                  setSel(null);
+                }}
+                className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                👤 Besetzen
+              </button>
+            </>
+          ) : (
+            <button
+              disabled={busy}
+              onClick={() => sel.apptId && freeBlock(sel.apptId)}
+              className="rounded-lg border border-line bg-background px-3 py-1.5 text-xs font-semibold hover:border-brand hover:text-brand disabled:opacity-50"
+            >
+              Freigeben
+            </button>
+          )}
+          <button
+            onClick={() => setSel(null)}
+            className="ml-auto rounded-lg px-2 py-1 text-xs text-muted hover:text-foreground"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1539,17 +1776,19 @@ function KundenTab({
 function ScheduleForm({
   services,
   defaultDate,
+  defaultTime,
   prefill,
   onDone,
 }: {
   services: Service[];
   defaultDate: string;
+  defaultTime?: string;
   prefill?: { name: string; email: string; phone: string };
   onDone: () => void;
 }) {
   const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
   const [date, setDate] = useState(defaultDate);
-  const [time, setTime] = useState("10:00");
+  const [time, setTime] = useState(defaultTime ?? "10:00");
   const [name, setName] = useState(prefill?.name ?? "");
   const [email, setEmail] = useState(prefill?.email ?? "");
   const [phone, setPhone] = useState(prefill?.phone ?? "");

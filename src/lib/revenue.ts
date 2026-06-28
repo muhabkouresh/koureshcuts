@@ -31,7 +31,7 @@ function mondayOf(ds: string): string {
 export async function getRevenueStats(): Promise<RevenueStats> {
   const rows = await prisma.appointment.findMany({
     where: {
-      status: { notIn: ["CANCELLED", "NO_SHOW"] },
+      status: { notIn: ["CANCELLED", "NO_SHOW", "BLOCKED"] },
       startTime: { lt: new Date() },
     },
     select: { startTime: true, service: { select: { priceCents: true } } },

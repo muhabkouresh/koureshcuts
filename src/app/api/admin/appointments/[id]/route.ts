@@ -49,3 +49,37 @@ export async function PATCH(
 
   return Response.json({ ok: true });
 }
+
+// DELETE /api/admin/appointments/[id] — free a manual block. Restricted to
+// BLOCKED rows; real bookings are cancelled (PATCH), never hard-deleted.
+export async function DELETE(
+  _request: Request,
+  ctx: RouteContext<"/api/admin/appointments/[id]">,
+) {
+  if (!(await isAuthenticated())) {
+    return Response.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const { id } = await ctx.params;
+  const existing = await prisma.appointment.findUnique({ where: { id } });
+  if (!existing) {
+    return Response.json({ error: "Not found." }, { status: 404 });
+  }
+  if (existing.status !== "BLOCKED") {
+    return Response.json(
+      { error: "Nur Sperrungen können gelöscht werden." },
+      { status: 400 },
+    );
+  }
+
+  await prisma.appointment.delete({ where: { id } });
+
+  // Freeing the slot may open a previously-full day — notify the waitlist.
+  try {
+    await notifyWaitlistForDay(existing.startTime);
+  } catch (err) {
+    console.error("waitlist auto-notify failed", err);
+  }
+
+  return Response.json({ ok: true });
+}
