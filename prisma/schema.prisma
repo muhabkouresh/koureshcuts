@@ -99,6 +99,16 @@ model Appointment {
   @@index([status])
 }
 
+/// A Web-Push subscription of the admin PWA (owner's phone/browser). Every
+/// subscription receives a push notification on new bookings/cancellations.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}
+
 /// A customer waiting for a spot on a fully-booked day. Created from the public
 /// booking flow when a chosen day has no free slots. `date` is the start-of-day
 /// UTC instant for the shop timezone. `notifiedAt` is set once the owner pings

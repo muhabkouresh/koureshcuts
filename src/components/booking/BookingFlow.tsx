@@ -104,6 +104,22 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BookingResult | null>(null);
 
+  // Returning customers: prefill name/email remembered from the last booking
+  // on this device (localStorage only — nothing leaves the browser).
+  /* eslint-disable react-hooks/set-state-in-effect -- one-time client-only prefill from localStorage (not available during SSR) */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("kc_customer");
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { name?: string; email?: string };
+      if (saved.name) setName(saved.name);
+      if (saved.email) setEmail(saved.email);
+    } catch {
+      // Corrupt/blocked storage — start with empty fields.
+    }
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   // Prefetch the current month's availability for every service as soon as the
   // booking section renders, so picking a service shows the calendar instantly.
   useEffect(() => {
@@ -156,8 +172,8 @@ export default function BookingFlow({ services }: { services: Service[] }) {
     setDate(null);
     setSlots([]);
     setSlot(null);
-    setName("");
-    setEmail("");
+    // Keep name/email — booking another appointment right away shouldn't
+    // require retyping them.
     setNotes("");
     setError(null);
     setResult(null);
@@ -194,6 +210,11 @@ export default function BookingFlow({ services }: { services: Service[] }) {
           setStep("datetime");
         }
         return;
+      }
+      try {
+        localStorage.setItem("kc_customer", JSON.stringify({ name, email }));
+      } catch {
+        // Storage unavailable (private mode) — skip remembering.
       }
       setResult(data as BookingResult);
       setStep("done");
@@ -657,7 +678,8 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
   );
 }
 
-function Calendar({
+// Exported for reuse in the reschedule flow (/termin/verschieben).
+export function Calendar({
   serviceId,
   value,
   onChange,

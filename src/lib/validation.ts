@@ -15,6 +15,12 @@ export const createAppointmentSchema = z.object({
 
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
 
+// Customer-initiated reschedule (token-guarded, from the email link). Only the
+// new start instant is needed — service and customer data stay unchanged.
+export const rescheduleAppointmentSchema = z.object({
+  start: z.string().datetime({ message: "Ungültige Startzeit." }),
+});
+
 // Joining the waitlist for a fully-booked day (public booking flow).
 export const joinWaitlistSchema = z.object({
   serviceId: z.string().min(1, "Service ist erforderlich."),
@@ -103,8 +109,15 @@ export const settingsSchema = z
     bookingWindowDays: z.number().int().min(1).max(365).optional(),
     // Whether reminder emails are sent.
     reminderEnabled: z.boolean().optional(),
-    // Hours before the appointment the reminder is sent (1–168 = up to a week).
-    reminderLeadHours: z.number().int().min(1).max(168).optional(),
+    // Hours before the appointment the reminder is sent (24–168). The cron
+    // job runs only once per day (Vercel Hobby), so anything below 24 hours
+    // would silently skip most appointments — 24 is the enforced minimum.
+    reminderLeadHours: z
+      .number()
+      .int()
+      .min(24, "Mindestens 24 Stunden (Versand erfolgt einmal täglich).")
+      .max(168)
+      .optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: "Keine Änderungen übergeben.",

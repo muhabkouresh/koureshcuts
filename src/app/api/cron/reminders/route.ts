@@ -20,9 +20,11 @@ export async function GET(request: NextRequest) {
   }
 
   const now = new Date();
-  const windowEnd = new Date(
-    now.getTime() + settings.reminderLeadHours * 60 * 60_000,
-  );
+  // The cron fires only once a day (Vercel Hobby), so a lead below 24 hours
+  // would miss every appointment later in the day. Clamp defensively even if
+  // an old value is still stored.
+  const leadHours = Math.max(24, settings.reminderLeadHours);
+  const windowEnd = new Date(now.getTime() + leadHours * 60 * 60_000);
 
   const due = await prisma.appointment.findMany({
     where: {

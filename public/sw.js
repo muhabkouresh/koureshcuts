@@ -37,3 +37,33 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+// Web-Push for the admin PWA: show incoming booking/cancellation notifications.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    // Non-JSON payload — show a generic notification below.
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Kouresh_cuts", {
+      body: data.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: "/admin" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/admin";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const existing = wins.find((w) => w.url.includes("/admin"));
+      if (existing) return existing.focus();
+      return clients.openWindow(url);
+    }),
+  );
+});

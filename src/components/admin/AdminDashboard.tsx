@@ -2006,6 +2006,7 @@ function Availability({
         leadHours={reminderLeadHours}
         onChange={onChange}
       />
+      <PushCard />
       <HoursCard hours={hours} onChange={onChange} />
       <SpecialDaysCard specialDays={specialDays} onChange={onChange} />
       <TimeOffCard timeOff={timeOff} onChange={onChange} />
@@ -2084,12 +2085,12 @@ function RemindersCard({
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // Versand läuft einmal täglich (Vercel-Cron) — Werte unter 24 h würden
+  // Termine später am Tag stillschweigend verpassen, daher nur Tages-Optionen.
   const LEAD_OPTIONS = [
-    { v: 2, label: "2 Stunden vorher" },
-    { v: 6, label: "6 Stunden vorher" },
-    { v: 12, label: "12 Stunden vorher" },
     { v: 24, label: "1 Tag vorher" },
     { v: 48, label: "2 Tage vorher" },
+    { v: 72, label: "3 Tage vorher" },
   ];
 
   async function save() {
@@ -2152,6 +2153,150 @@ function RemindersCard({
           </button>
           {msg && <span className="text-sm text-muted">{msg}</span>}
         </div>
+      </div>
+    </section>
+  );
+}
+
+// Web-Push payloads need the VAPID public key as a Uint8Array (backed by a
+// plain ArrayBuffer so it satisfies the DOM BufferSource type).
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const out = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+// Enable/disable push notifications for new bookings on THIS device (the
+// subscription lives in the browser; the server stores its endpoint).
+function PushCard() {
+  const [supported, setSupported] = useState(true);
+  const [serverEnabled, setServerEnabled] = useState<boolean | null>(null);
+  const [publicKey, setPublicKey] = useState("");
+  const [subscribed, setSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- one-time client-only feature detection (browser APIs unavailable during SSR) */
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !("serviceWorker" in navigator) ||
+      !("PushManager" in window) ||
+      !("Notification" in window)
+    ) {
+      setSupported(false);
+      return;
+    }
+    fetch("/api/admin/push")
+      .then((r) => r.json())
+      .then((d) => {
+        setServerEnabled(Boolean(d.enabled));
+        setPublicKey(d.publicKey ?? "");
+      })
+      .catch(() => setServerEnabled(false));
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => setSubscribed(Boolean(sub)))
+      .catch(() => {});
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  async function enable() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setMsg("Benachrichtigungen wurden im Browser nicht erlaubt.");
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub =
+        (await reg.pushManager.getSubscription()) ??
+        (await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        }));
+      const res = await fetch("/api/admin/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setMsg(d.error ?? "Aktivierung fehlgeschlagen.");
+        return;
+      }
+      setSubscribed(true);
+      setMsg("Aktiviert — du bekommst jetzt Push bei neuen Buchungen.");
+    } catch {
+      setMsg("Aktivierung fehlgeschlagen. Bitte erneut versuchen.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disable() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/admin/push", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setSubscribed(false);
+      setMsg("Deaktiviert.");
+    } catch {
+      setMsg("Deaktivierung fehlgeschlagen.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">Push-Benachrichtigungen</h2>
+      <p className="mt-1 text-xs text-muted">
+        Sofortige Benachrichtigung auf diesem Gerät bei neuen Buchungen,
+        Verschiebungen und Stornierungen. Funktioniert am besten mit der
+        installierten Admin-App.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        {!supported ? (
+          <span className="text-muted">
+            Dieser Browser unterstützt keine Push-Benachrichtigungen.
+          </span>
+        ) : serverEnabled === false ? (
+          <span className="text-muted">
+            Auf dem Server nicht konfiguriert (VAPID-Schlüssel fehlen).
+          </span>
+        ) : subscribed ? (
+          <button
+            onClick={disable}
+            disabled={busy}
+            className="rounded-xl border border-line px-4 py-2 text-sm font-semibold disabled:opacity-50"
+          >
+            {busy ? "…" : "Auf diesem Gerät deaktivieren"}
+          </button>
+        ) : (
+          <button
+            onClick={enable}
+            disabled={busy || !publicKey}
+            className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+          >
+            {busy ? "…" : "Auf diesem Gerät aktivieren"}
+          </button>
+        )}
+        {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
     </section>
   );

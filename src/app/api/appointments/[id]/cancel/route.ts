@@ -4,6 +4,9 @@ import { AppointmentStatus } from "@/lib/constants";
 import { verifyCancelToken } from "@/lib/token";
 import { sendCancellationNotice } from "@/lib/email";
 import { notifyWaitlistForDay } from "@/lib/waitlist";
+import { sendAdminPush } from "@/lib/push";
+import { siteConfig } from "@/config/site";
+import { formatDateTimeLabel } from "@/lib/time";
 
 // POST /api/appointments/[id]/cancel?t=<token>
 // Public, token-guarded self-cancellation for customers.
@@ -44,6 +47,22 @@ export async function POST(
   if (appt.status === AppointmentStatus.CANCELLED) {
     return Response.json({ ok: true, alreadyCancelled: true });
   }
+  // Only upcoming, still-active bookings may be cancelled — a COMPLETED or
+  // NO_SHOW appointment must keep its status (revenue/statistics), and past
+  // appointments can't be "freed up" anymore.
+  const cancellable =
+    (appt.status === AppointmentStatus.PENDING ||
+      appt.status === AppointmentStatus.CONFIRMED) &&
+    appt.startTime > new Date();
+  if (!cancellable) {
+    return Response.json(
+      {
+        error:
+          "Dieser Termin liegt in der Vergangenheit oder kann nicht mehr online storniert werden. Bitte melde dich direkt bei uns.",
+      },
+      { status: 409 },
+    );
+  }
 
   const newNotes =
     (appt.notes ? `${appt.notes}\n` : "") + `Absagegrund: ${reason}`;
@@ -76,6 +95,16 @@ export async function POST(
     await notifyWaitlistForDay(appt.startTime);
   } catch (err) {
     console.error("waitlist auto-notify failed", err);
+  }
+
+  // Push to the admin PWA (best-effort).
+  try {
+    await sendAdminPush(
+      "Termin storniert",
+      `${appt.customerName} — ${appt.service.name}, ${formatDateTimeLabel(appt.startTime, siteConfig.timezone)}`,
+    );
+  } catch (err) {
+    console.error("cancel push failed", err);
   }
 
   return Response.json({ ok: true });

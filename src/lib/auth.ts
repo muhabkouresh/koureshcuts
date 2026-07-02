@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { getIronSession, type SessionOptions } from "iron-session";
 import { cookies } from "next/headers";
 
@@ -35,11 +36,8 @@ export async function isAuthenticated(): Promise<boolean> {
 export function checkPassword(submitted: string): boolean {
   const expected = process.env.ADMIN_PASSWORD || "";
   if (!expected) return false;
-  // Constant-ish comparison; admin auth is low-volume.
-  if (submitted.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i++) {
-    mismatch |= submitted.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
+  // Compare fixed-length digests so neither content nor length leaks timing.
+  const a = crypto.createHash("sha256").update(submitted).digest();
+  const b = crypto.createHash("sha256").update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
 }

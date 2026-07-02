@@ -113,10 +113,14 @@ async function loadHoursMap(): Promise<Map<number, BusinessHours>> {
   return new Map(rows.map((h) => [h.dayOfWeek, h]));
 }
 
-/** Open slots for one service on one calendar date. */
+/**
+ * Open slots for one service on one calendar date. When rescheduling, pass
+ * `excludeAppointmentId` so the customer's own booking doesn't block the day.
+ */
 export async function getAvailability(
   serviceId: string,
   dateStr: string,
+  excludeAppointmentId?: string,
 ): Promise<AvailabilityResult> {
   if (!isValidDateStr(dateStr)) throw new Error("INVALID_DATE");
   const service = await loadService(serviceId);
@@ -140,6 +144,7 @@ export async function getAvailability(
           status: { in: BUSY_STATUSES },
           startTime: { lt: dayEndUtc },
           endTime: { gt: dayStartUtc },
+          ...(excludeAppointmentId ? { id: { not: excludeAppointmentId } } : {}),
         },
         select: { startTime: true, endTime: true },
       }),

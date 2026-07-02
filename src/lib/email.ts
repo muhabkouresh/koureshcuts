@@ -3,7 +3,7 @@ import { siteConfig } from "@/config/site";
 import { formatDateTimeLabel, formatClock, formatLongDate } from "./time";
 import { priceFull } from "./format";
 import { buildIcs, googleCalendarUrl, type CalendarEvent } from "./calendar";
-import { cancelUrl } from "./token";
+import { cancelUrl, rescheduleUrl } from "./token";
 
 // Email delivery via Resend. When RESEND_API_KEY is unset (local dev), emails
 // are logged to the console instead of being sent, so the flow is testable
@@ -141,7 +141,8 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
        <h2 style="margin:0;font-size:22px;font-weight:700">Dein Termin wurde bestätigt</h2>
        <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>Vielen Dank. Dein Termin wurde bestätigt.</p>
        <div style="margin:22px 0 8px">
-         <a href="${cancelUrl(data.id)}" style="display:inline-block;background:#fff;border:1px solid #d6d3d1;color:#18181b;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700">Termin stornieren</a>
+         <a href="${rescheduleUrl(data.id)}" style="display:inline-block;background:#8a1f2b;border:1px solid #8a1f2b;color:#fff;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700;margin:0 4px 8px">Termin verschieben</a>
+         <a href="${cancelUrl(data.id)}" style="display:inline-block;background:#fff;border:1px solid #d6d3d1;color:#18181b;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700;margin:0 4px 8px">Termin stornieren</a>
        </div>
        <p style="font-size:13px;color:#888;margin:6px 0 4px">Zum Kalender hinzufügen</p>
        <div style="margin:0 0 4px">
@@ -252,7 +253,8 @@ export async function sendReminderEmail(data: BookingEmailData): Promise<void> {
     `<p style="font-size:14px;color:#444">Hallo ${data.customerName}, das ist eine Erinnerung an deinen Termin:</p>
      ${detailsTable(data)}
      <div style="margin-top:20px">
-       <a href="${cancelUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600">Termin absagen</a>
+       <a href="${rescheduleUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;margin:0 6px 8px 0">Termin verschieben</a>
+       <a href="${cancelUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;margin:0 0 8px">Termin absagen</a>
      </div>
      <p style="font-size:13px;color:#888;margin-top:16px">Bis bald!</p>`,
   );
@@ -261,6 +263,76 @@ export async function sendReminderEmail(data: BookingEmailData): Promise<void> {
     subject: `Erinnerung: ${data.serviceName} bei ${siteConfig.name}`,
     html,
   });
+}
+
+/**
+ * Confirm a customer-initiated reschedule: new details + calendar links to the
+ * customer, and a heads-up (old → new time) to the owner.
+ */
+export async function sendRescheduleEmails(
+  data: BookingEmailData,
+  oldStart: Date,
+): Promise<void> {
+  const tz = siteConfig.timezone;
+  const event = calendarEvent(data);
+  const gcal = googleCalendarUrl(event);
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const icsUrl = `${siteUrl}/api/appointments/${data.id}/ics`;
+  let ics: string | undefined;
+  try {
+    ics = buildIcs(event);
+  } catch (e) {
+    console.error("ics build failed", e);
+  }
+
+  const customerHtml = layout(
+    "",
+    `<div style="text-align:center">
+       <div style="width:56px;height:56px;border-radius:50%;background:#1f9d3b;margin:8px auto 18px;line-height:56px;color:#fff;font-size:28px;font-weight:700">&#10003;</div>
+       <h2 style="margin:0;font-size:22px;font-weight:700">Dein Termin wurde verschoben</h2>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>dein Termin wurde erfolgreich auf die neue Zeit verschoben.</p>
+     </div>
+     <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
+     <table style="width:100%;border-collapse:collapse;font-size:14px">
+       <tr><td style="padding:8px 0;color:#888">Alter Termin</td><td style="padding:8px 0;text-align:right;color:#888;text-decoration:line-through">${formatDateTimeLabel(oldStart, tz)}</td></tr>
+       <tr><td style="padding:8px 0;color:#888">Neuer Termin</td><td style="padding:8px 0;text-align:right;font-weight:700">${formatDateTimeLabel(data.start, tz)}</td></tr>
+       <tr><td style="padding:8px 0;color:#888">Service</td><td style="padding:8px 0;text-align:right;font-weight:600">${data.serviceName}</td></tr>
+       <tr><td style="padding:8px 0;color:#888">Preis</td><td style="padding:8px 0;text-align:right;font-weight:600">${priceFull(data.priceCents)} (Zahlung vor Ort)</td></tr>
+     </table>
+     <div style="margin:18px 0 4px;text-align:center">
+       <p style="font-size:13px;color:#888;margin:6px 0 4px">Zum Kalender hinzufügen</p>
+       <a href="${gcal}" style="font-size:13px;color:#8a1f2b;text-decoration:underline">Google Kalender</a>
+       <span style="color:#d6d3d1;margin:0 8px">·</span>
+       <a href="${icsUrl}" style="font-size:13px;color:#8a1f2b;text-decoration:underline">Apple Kalender</a>
+     </div>
+     <div style="margin:16px 0 0;text-align:center">
+       <a href="${cancelUrl(data.id)}" style="font-size:13px;color:#888;text-decoration:underline">Termin stornieren</a>
+     </div>`,
+  );
+  await send({
+    to: data.customerEmail,
+    subject: `Verschoben: ${data.serviceName} — ${formatDateTimeLabel(data.start, tz)}`,
+    html: customerHtml,
+    attachIcs: ics,
+  });
+
+  if (siteConfig.ownerEmail) {
+    const ownerHtml = layout(
+      "Termin verschoben",
+      `<p style="font-size:14px;color:#444">Ein Kunde hat seinen Termin verschoben:</p>
+       <table style="width:100%;border-collapse:collapse;font-size:14px">
+         <tr><td style="padding:8px 0;color:#888">Vorher</td><td style="padding:8px 0;text-align:right;text-decoration:line-through;color:#888">${formatDateTimeLabel(oldStart, tz)}</td></tr>
+         <tr><td style="padding:8px 0;color:#888">Jetzt</td><td style="padding:8px 0;text-align:right;font-weight:700">${formatDateTimeLabel(data.start, tz)}</td></tr>
+         <tr><td style="padding:8px 0;color:#888">Service</td><td style="padding:8px 0;text-align:right;font-weight:600">${data.serviceName}</td></tr>
+       </table>
+       <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${data.customerName} · ${data.customerEmail}</p>`,
+    );
+    await send({
+      to: siteConfig.ownerEmail,
+      subject: `Verschoben: ${data.customerName} — ${data.serviceName}`,
+      html: ownerHtml,
+    });
+  }
 }
 
 /** Notify the owner that a customer cancelled (slot freed up). */

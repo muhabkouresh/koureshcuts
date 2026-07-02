@@ -23,3 +23,9 @@ export function cancelUrl(id: string): string {
   const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   return `${base}/termin/absagen/${id}?t=${cancelToken(id)}`;
 }
+
+/** Full public reschedule URL for an appointment (same token as cancel). */
+export function rescheduleUrl(id: string): string {
+  const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  return `${base}/termin/verschieben/${id}?t=${cancelToken(id)}`;
+}

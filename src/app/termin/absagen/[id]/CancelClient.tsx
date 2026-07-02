@@ -9,12 +9,14 @@ export default function CancelClient({
   serviceName,
   whenLabel,
   alreadyCancelled,
+  cancellable,
 }: {
   id: string;
   token: string;
   serviceName: string;
   whenLabel: string;
   alreadyCancelled: boolean;
+  cancellable: boolean;
 }) {
   const [done, setDone] = useState(alreadyCancelled);
   const [submitting, setSubmitting] = useState(false);
@@ -73,12 +75,46 @@ export default function CancelClient({
     );
   }
 
+  // Past or completed appointments can no longer be cancelled online.
+  if (!cancellable) {
+    return (
+      <div className="mt-4">
+        <div className="mt-3 rounded-xl bg-surface p-4 text-sm">
+          <p className="font-medium">{serviceName}</p>
+          <p className="mt-0.5 text-muted">{whenLabel}</p>
+        </div>
+        <p className="mt-4 text-sm text-muted">
+          Dieser Termin liegt in der Vergangenheit oder kann nicht mehr online
+          storniert werden. Bitte wende dich direkt an uns — oder buche
+          jederzeit einen neuen Termin auf{" "}
+          <Link href="/" className="text-brand underline underline-offset-2">
+            unserer Seite
+          </Link>
+          .
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-4">
       <p className="text-sm text-muted">Möchtest du diesen Termin absagen?</p>
       <div className="mt-3 rounded-xl bg-surface p-4 text-sm">
         <p className="font-medium">{serviceName}</p>
         <p className="mt-0.5 text-muted">{whenLabel}</p>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-line bg-surface p-4 text-sm">
+        <p className="text-muted">
+          Passt die Zeit nur nicht?{" "}
+          <Link
+            href={`/termin/verschieben/${id}?t=${encodeURIComponent(token)}`}
+            className="font-semibold text-brand underline underline-offset-2"
+          >
+            Termin verschieben
+          </Link>{" "}
+          statt absagen.
+        </p>
       </div>
 
       <div className="mt-4">
