@@ -6,19 +6,26 @@ import { siteConfig } from "@/config/site";
 // VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY; when unset, pushes are silently
 // skipped so the booking flow never depends on them.
 
-const publicKey = process.env.VAPID_PUBLIC_KEY || "";
-const privateKey = process.env.VAPID_PRIVATE_KEY || "";
-const configured = Boolean(publicKey && privateKey);
+// Trim defensively — env values set via CLI pipes can carry stray newlines,
+// and web-push rejects (throws on) anything that isn't clean URL-safe base64.
+const publicKey = (process.env.VAPID_PUBLIC_KEY || "").trim();
+const privateKey = (process.env.VAPID_PRIVATE_KEY || "").trim();
+let configured = false;
 
-if (configured) {
-  webpush.setVapidDetails(
-    `mailto:${siteConfig.ownerEmail || siteConfig.email}`,
-    publicKey,
-    privateKey,
-  );
+if (publicKey && privateKey) {
+  try {
+    webpush.setVapidDetails(
+      `mailto:${siteConfig.ownerEmail || siteConfig.email}`,
+      publicKey,
+      privateKey,
+    );
+    configured = true;
+  } catch (err) {
+    console.error("invalid VAPID configuration — push disabled", err);
+  }
 }
 
-export const vapidPublicKey = publicKey;
+export const vapidPublicKey = configured ? publicKey : "";
 export const pushConfigured = configured;
 
 /** Send a notification to every registered admin device. Never throws. */
