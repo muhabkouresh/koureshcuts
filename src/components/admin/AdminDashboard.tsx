@@ -13,6 +13,7 @@ import {
   dateKey,
   formatClock,
   formatDateLabel,
+  formatDateTimeLabel,
   longDateFromStr,
   minutesToHHMM,
   nowMs,
@@ -80,6 +81,7 @@ type Data = {
   bookingWindowDays: number;
   reminderEnabled: boolean;
   reminderLeadHours: number;
+  cancelDeadlineHours: number;
   revenue: RevenueStats;
   services: Service[];
   appointments: Appointment[];
@@ -225,6 +227,7 @@ export default function AdminDashboard({
           bookingWindowDays={data.bookingWindowDays}
           reminderEnabled={data.reminderEnabled}
           reminderLeadHours={data.reminderLeadHours}
+          cancelDeadlineHours={data.cancelDeadlineHours}
           onChange={() => router.refresh()}
         />
       )}
@@ -964,6 +967,9 @@ function AgendaCard({
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
+  const [cancelReason, setCancelReason] = useState("");
   const cancelled = a.status === "CANCELLED";
   const noShow = a.status === "NO_SHOW";
   const isPast = new Date(a.start).getTime() < nowMs();
@@ -975,14 +981,18 @@ function AgendaCard({
         ? "bg-blue-900"
         : "bg-brand";
 
-  async function setStatus(status: string) {
+  async function setStatus(
+    status: string,
+    extra?: { notify?: boolean; reason?: string },
+  ) {
     setBusy(true);
     try {
       await fetch(`/api/admin/appointments/${a.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...extra }),
       });
+      setCancelOpen(false);
       onChange();
     } finally {
       setBusy(false);
@@ -1055,7 +1065,15 @@ function AgendaCard({
             {a.status !== "CANCELLED" && (
               <button
                 disabled={busy}
-                onClick={() => setStatus("CANCELLED")}
+                onClick={() => {
+                  // Upcoming appointment with a reachable customer: offer to
+                  // notify them; otherwise cancel straight away.
+                  if (!isPast && a.customerEmail) {
+                    setCancelOpen((o) => !o);
+                  } else {
+                    void setStatus("CANCELLED");
+                  }
+                }}
                 className="rounded-lg border border-line px-3 py-1.5 hover:border-red-400 hover:text-red-600 disabled:opacity-50"
               >
                 Stornieren
@@ -1095,6 +1113,51 @@ function AgendaCard({
               Apple Kalender
             </a>
           </div>
+
+          {cancelOpen && (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50/60 p-3">
+              <p className="text-xs font-semibold text-red-700">
+                Termin absagen
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={notifyCustomer}
+                  onChange={(e) => setNotifyCustomer(e.target.checked)}
+                />
+                Kunde per E-Mail benachrichtigen ({a.customerEmail})
+              </label>
+              <input
+                type="text"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                maxLength={300}
+                placeholder="Grund (optional, steht in der E-Mail)"
+                className="mt-2 w-full rounded-lg border border-line bg-background px-3 py-2 text-xs"
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    setStatus("CANCELLED", {
+                      notify: notifyCustomer,
+                      reason: cancelReason.trim(),
+                    })
+                  }
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {busy ? "…" : "Absage bestätigen"}
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() => setCancelOpen(false)}
+                  className="rounded-lg border border-line px-3 py-1.5 text-xs"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </li>
@@ -1988,6 +2051,7 @@ function Availability({
   bookingWindowDays,
   reminderEnabled,
   reminderLeadHours,
+  cancelDeadlineHours,
   onChange,
 }: {
   hours: DayHours[];
@@ -1996,11 +2060,13 @@ function Availability({
   bookingWindowDays: number;
   reminderEnabled: boolean;
   reminderLeadHours: number;
+  cancelDeadlineHours: number;
   onChange: () => void;
 }) {
   return (
     <div className="mt-6 flex flex-col gap-8">
       <BookingWindowCard days={bookingWindowDays} onChange={onChange} />
+      <CancelDeadlineCard hours={cancelDeadlineHours} onChange={onChange} />
       <RemindersCard
         enabled={reminderEnabled}
         leadHours={reminderLeadHours}
@@ -2058,6 +2124,76 @@ function BookingWindowCard({
           className="w-20 rounded-lg border border-line bg-background px-3 py-2"
         />
         <span className="text-muted">Tage im Voraus</span>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+        >
+          {saving ? "Speichern…" : "Speichern"}
+        </button>
+        {msg && <span className="text-sm text-muted">{msg}</span>}
+      </div>
+    </section>
+  );
+}
+
+// Until how many hours before the start customers may cancel/reschedule online.
+function CancelDeadlineCard({
+  hours: initialHours,
+  onChange,
+}: {
+  hours: number;
+  onChange: () => void;
+}) {
+  const [hours, setHours] = useState(initialHours);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const OPTIONS = [
+    { v: 0, label: "Bis zum Termin (keine Frist)" },
+    { v: 2, label: "Bis 2 Stunden vorher" },
+    { v: 6, label: "Bis 6 Stunden vorher" },
+    { v: 12, label: "Bis 12 Stunden vorher" },
+    { v: 24, label: "Bis 24 Stunden vorher" },
+    { v: 48, label: "Bis 48 Stunden vorher" },
+  ];
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancelDeadlineHours: hours }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setMsg(res.ok ? "Gespeichert." : d.error ?? "Fehler.");
+      if (res.ok) onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">Stornofrist</h2>
+      <p className="mt-1 text-xs text-muted">
+        Bis wann Kunden ihren Termin online absagen oder verschieben können.
+        Danach geht es nur noch direkt über dich.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        <select
+          value={hours}
+          onChange={(e) => setHours(Number(e.target.value))}
+          className="rounded-lg border border-line bg-background px-3 py-2"
+        >
+          {OPTIONS.map((o) => (
+            <option key={o.v} value={o.v}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         <button
           onClick={save}
           disabled={saving}
@@ -2437,6 +2573,19 @@ function TimeOffCard({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  // Bookings that fall inside the requested range (server responded 409) —
+  // the admin decides whether to cancel them or keep them.
+  const [conflicts, setConflicts] = useState<
+    | {
+        id: string;
+        customerName: string;
+        hasEmail: boolean;
+        serviceName: string;
+        start: string;
+      }[]
+    | null
+  >(null);
 
   function resetForm() {
     setStart("");
@@ -2445,6 +2594,7 @@ function TimeOffCard({
     setRangeMode(false);
     setEditingId(null);
     setError(null);
+    setConflicts(null);
   }
 
   function startEdit(t: TimeOff) {
@@ -2459,6 +2609,47 @@ function TimeOffCard({
     setError(null);
   }
 
+  async function save(onConflict: "abort" | "cancel" | "keep") {
+    const finalEnd = rangeMode && end ? end : start;
+    setSaving(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const url = editingId
+        ? `/api/admin/timeoff/${editingId}`
+        : "/api/admin/timeoff";
+      const res = await fetch(url, {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate: start,
+          endDate: finalEnd,
+          reason,
+          onConflict,
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Existing bookings in the range — surface them and let the admin pick.
+        if (res.status === 409 && Array.isArray(d.conflicts)) {
+          setConflicts(d.conflicts);
+          return;
+        }
+        setError(d.error ?? "Konnte nicht gespeichert werden.");
+        return;
+      }
+      if (onConflict === "cancel" && typeof d.cancelled === "number") {
+        setInfo(
+          `Gespeichert — ${d.cancelled} Termin(e) abgesagt, ${d.notified} Kunde(n) benachrichtigt.`,
+        );
+      }
+      resetForm();
+      onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!start) {
@@ -2470,27 +2661,7 @@ function TimeOffCard({
       setError("Bis-Datum muss am/nach dem Von-Datum liegen.");
       return;
     }
-    setSaving(true);
-    setError(null);
-    try {
-      const url = editingId
-        ? `/api/admin/timeoff/${editingId}`
-        : "/api/admin/timeoff";
-      const res = await fetch(url, {
-        method: editingId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate: start, endDate: finalEnd, reason }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(d.error ?? "Konnte nicht gespeichert werden.");
-        return;
-      }
-      resetForm();
-      onChange();
-    } finally {
-      setSaving(false);
-    }
+    await save("abort");
   }
 
   async function remove(id: string) {
@@ -2595,6 +2766,57 @@ function TimeOffCard({
         {error && (
           <p className="text-sm text-red-600 sm:col-span-2">{error}</p>
         )}
+        {info && (
+          <p className="text-sm text-emerald-700 sm:col-span-2">{info}</p>
+        )}
+
+        {conflicts && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 sm:col-span-2">
+            <p className="text-sm font-semibold text-amber-800">
+              In diesem Zeitraum gibt es {conflicts.length} gebuchte
+              Termin{conflicts.length === 1 ? "" : "e"}:
+            </p>
+            <ul className="mt-2 flex flex-col gap-1 text-sm text-amber-900">
+              {conflicts.map((c) => (
+                <li key={c.id}>
+                  {formatDateTimeLabel(new Date(c.start), tz)} — {c.customerName}{" "}
+                  ({c.serviceName}
+                  {c.hasEmail ? "" : ", keine E-Mail"})
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-amber-800">
+              Was soll mit den Terminen passieren?
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void save("cancel")}
+                className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                Termine absagen & Kunden informieren
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void save("keep")}
+                className="rounded-lg border border-amber-400 px-3 py-2 text-xs font-semibold text-amber-900 disabled:opacity-50"
+              >
+                Trotzdem sperren, Termine behalten
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setConflicts(null)}
+                className="rounded-lg border border-line px-3 py-2 text-xs"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-3 sm:col-span-2">
           <button
             type="submit"

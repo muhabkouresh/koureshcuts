@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
 import { verifyCancelToken } from "@/lib/token";
-import { formatDateTimeLabel } from "@/lib/time";
+import { formatDateTimeLabel, nowMs } from "@/lib/time";
 import { AppointmentStatus } from "@/lib/constants";
+import { getSettings } from "@/lib/settings";
 import RescheduleClient from "./RescheduleClient";
 
 export const dynamic = "force-dynamic";
@@ -25,11 +26,13 @@ export default async function ReschedulePage({
       })
     : null;
 
+  const settings = appt ? await getSettings() : null;
+  const deadlineHours = settings?.cancelDeadlineHours ?? 0;
   const active =
     appt !== null &&
     (appt.status === AppointmentStatus.PENDING ||
       appt.status === AppointmentStatus.CONFIRMED) &&
-    appt.startTime > new Date();
+    appt.startTime.getTime() - deadlineHours * 3600_000 > nowMs();
 
   return (
     <main className="flex flex-1 items-start justify-center px-5 py-14">
@@ -47,9 +50,9 @@ export default async function ReschedulePage({
           </p>
         ) : !active ? (
           <p className="mt-4 text-sm text-muted">
-            Dieser Termin kann nicht mehr verschoben werden (er liegt in der
-            Vergangenheit oder wurde bereits storniert). Du kannst jederzeit
-            einen neuen Termin auf unserer Seite buchen.
+            {appt.startTime.getTime() > nowMs() && deadlineHours > 0
+              ? `Online-Verschieben ist nur bis ${deadlineHours} Stunden vor dem Termin möglich. Bitte melde dich direkt bei uns.`
+              : "Dieser Termin kann nicht mehr verschoben werden (er liegt in der Vergangenheit oder wurde bereits storniert). Du kannst jederzeit einen neuen Termin auf unserer Seite buchen."}
           </p>
         ) : (
           <RescheduleClient

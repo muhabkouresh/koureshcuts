@@ -1,6 +1,10 @@
 import Link from "next/link";
+import { formatInTimeZone } from "date-fns-tz";
+import { de } from "date-fns/locale";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
+import { getNextFreeSlot } from "@/lib/availability";
+import { formatDateTimeLabel, nowMs } from "@/lib/time";
 import BookingFlow, { type Service } from "@/components/booking/BookingFlow";
 import SiteHeader from "@/components/ui/SiteHeader";
 import Reveal from "@/components/ui/Reveal";
@@ -42,6 +46,23 @@ const BENEFITS = [
   },
 ];
 
+// "5. Juli", "5.–6. Juli" or "28. Juli – 2. August" for a closed range.
+// `end` is stored exclusive (next midnight), so the last shown day is end-1.
+function closureLabel(start: Date, end: Date): string {
+  const tz = siteConfig.timezone;
+  const last = new Date(end.getTime() - 1);
+  const from = formatInTimeZone(start, tz, "d. MMMM", { locale: de });
+  const to = formatInTimeZone(last, tz, "d. MMMM", { locale: de });
+  if (from === to) return from;
+  const sameMonth =
+    formatInTimeZone(start, tz, "yyyy-MM") ===
+    formatInTimeZone(last, tz, "yyyy-MM");
+  if (sameMonth) {
+    return `${formatInTimeZone(start, tz, "d.", { locale: de })}–${to}`;
+  }
+  return `${from} – ${to}`;
+}
+
 export default async function Home() {
   const serviceRows = await prisma.service.findMany({
     where: { active: true },
@@ -55,6 +76,26 @@ export default async function Home() {
     },
   });
   const services: Service[] = serviceRows;
+
+  // Upcoming closures (next 30 days) for the info banner, and the earliest
+  // bookable slot as a hero teaser. Both refresh with the 60s ISR cycle.
+  const closures = await prisma.timeOff.findMany({
+    where: {
+      endDate: { gt: new Date(nowMs()) },
+      startDate: { lt: new Date(nowMs() + 30 * 24 * 60 * 60_000) },
+    },
+    orderBy: { startDate: "asc" },
+    take: 3,
+    select: { id: true, startDate: true, endDate: true },
+  });
+  let nextSlot: string | null = null;
+  if (services[0]) {
+    try {
+      nextSlot = (await getNextFreeSlot(services[0].id))?.start ?? null;
+    } catch (err) {
+      console.error("next free slot failed", err);
+    }
+  }
 
   return (
     <>
@@ -79,6 +120,19 @@ export default async function Home() {
         </div>
 
         <div className="relative mx-auto flex max-w-3xl flex-col items-center px-5 pb-24 pt-36 text-center sm:pb-32 sm:pt-44">
+          {closures.length > 0 && (
+            <div className="animate-fade-up mb-6 w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50/90 px-5 py-3 text-sm text-amber-800 backdrop-blur-sm">
+              <p className="font-semibold">
+                {closures.length === 1 ? "Geschlossen" : "Geschlossen an folgenden Tagen"}
+              </p>
+              <p className="mt-0.5">
+                {closures
+                  .map((c) => closureLabel(c.startDate, c.endDate))
+                  .join(" · ")}
+              </p>
+            </div>
+          )}
+
           <span className="animate-fade-up mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-background/70 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-brand backdrop-blur-sm">
             <span className="h-1.5 w-1.5 rounded-full bg-brand" />
             {siteConfig.name}
@@ -105,6 +159,16 @@ export default async function Home() {
               Sofortige Bestätigung · keine Wartezeit
             </span>
           </div>
+
+          {nextSlot && (
+            <p className="animate-fade-up delay-3 mt-6 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50/90 px-4 py-2 text-sm font-medium text-emerald-800 backdrop-blur-sm">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+              Nächster freier Termin:{" "}
+              <strong>
+                {formatDateTimeLabel(new Date(nextSlot), siteConfig.timezone)}
+              </strong>
+            </p>
+          )}
         </div>
 
         {/* Scroll hint */}

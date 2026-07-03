@@ -52,6 +52,9 @@ model Settings {
   reminderEnabled   Boolean  @default(true)
   /// How many hours before the appointment the reminder is sent.
   reminderLeadHours Int      @default(24)
+  /// Until how many hours before the start customers may cancel/reschedule
+  /// online (0 = up to the start time).
+  cancelDeadlineHours Int    @default(0)
   updatedAt         DateTime @updatedAt
 }
 

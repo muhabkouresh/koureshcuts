@@ -2,9 +2,11 @@ import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { appointmentActionSchema } from "@/lib/validation";
 import { notifyWaitlistForDay } from "@/lib/waitlist";
+import { sendShopCancellationEmail } from "@/lib/email";
 
 // PATCH /api/admin/appointments/[id] — update an appointment's status
-// (e.g. CANCELLED, COMPLETED, CONFIRMED).
+// (e.g. CANCELLED, COMPLETED, CONFIRMED). When cancelling with notify=true,
+// the customer is emailed that the shop cancelled (optional reason).
 export async function PATCH(
   request: Request,
   ctx: RouteContext<"/api/admin/appointments/[id]">,
@@ -19,27 +21,63 @@ export async function PATCH(
   try {
     body = await request.json();
   } catch {
-    return Response.json({ error: "Invalid request." }, { status: 400 });
+    return Response.json({ error: "Ungültige Anfrage." }, { status: 400 });
   }
 
   const parsed = appointmentActionSchema.safeParse(body);
   if (!parsed.success) {
-    return Response.json({ error: "Invalid status." }, { status: 400 });
+    return Response.json({ error: "Ungültiger Status." }, { status: 400 });
   }
 
-  const existing = await prisma.appointment.findUnique({ where: { id } });
+  const existing = await prisma.appointment.findUnique({
+    where: { id },
+    include: { service: true },
+  });
   if (!existing) {
-    return Response.json({ error: "Not found." }, { status: 404 });
+    return Response.json({ error: "Nicht gefunden." }, { status: 404 });
   }
+
+  const cancelling =
+    parsed.data.status === "CANCELLED" && existing.status !== "CANCELLED";
 
   await prisma.appointment.update({
     where: { id },
-    data: { status: parsed.data.status },
+    data: {
+      status: parsed.data.status,
+      ...(cancelling && parsed.data.reason
+        ? {
+            notes:
+              (existing.notes ? `${existing.notes}\n` : "") +
+              `Vom Shop abgesagt: ${parsed.data.reason}`,
+          }
+        : {}),
+    },
   });
 
-  // If this cancels a previously-active appointment, a spot opened up — auto-
-  // notify anyone on the waitlist for that day.
-  if (parsed.data.status === "CANCELLED" && existing.status !== "CANCELLED") {
+  let notified = false;
+  if (cancelling) {
+    // Tell the customer the shop cancelled (only when asked to and possible).
+    if (parsed.data.notify && existing.customerEmail) {
+      try {
+        await sendShopCancellationEmail(
+          {
+            id: existing.id,
+            customerName: existing.customerName,
+            customerEmail: existing.customerEmail,
+            serviceName: existing.service.name,
+            priceCents: existing.service.priceCents,
+            start: existing.startTime,
+            end: existing.endTime,
+          },
+          parsed.data.reason,
+        );
+        notified = true;
+      } catch (err) {
+        console.error("shop cancellation email failed", err);
+      }
+    }
+
+    // A spot opened up — auto-notify anyone on the waitlist for that day.
     try {
       await notifyWaitlistForDay(existing.startTime);
     } catch (err) {
@@ -47,7 +85,7 @@ export async function PATCH(
     }
   }
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, notified });
 }
 
 // DELETE /api/admin/appointments/[id] — free a manual block. Restricted to

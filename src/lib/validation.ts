@@ -62,6 +62,10 @@ export const timeOffSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date."),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date."),
   reason: z.string().trim().max(200).optional().default(""),
+  // What to do when active bookings already exist in the range:
+  // "abort" (default) rejects with the conflict list so the admin can decide,
+  // "cancel" cancels them and emails the customers, "keep" leaves them as-is.
+  onConflict: z.enum(["abort", "cancel", "keep"]).optional().default("abort"),
 });
 
 // Extra working day on a single date (with its own hours). `isPublic` decides
@@ -80,6 +84,10 @@ export const specialDaySchema = z
 
 export const appointmentActionSchema = z.object({
   status: z.enum(["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"]),
+  // When cancelling: send the customer an email about it (requires an email
+  // on the booking), optionally with a short reason.
+  notify: z.boolean().optional().default(false),
+  reason: z.string().trim().max(300).optional().default(""),
 });
 
 // Service management (admin). Prices in integer cents, durations in minutes.
@@ -118,6 +126,9 @@ export const settingsSchema = z
       .min(24, "Mindestens 24 Stunden (Versand erfolgt einmal täglich).")
       .max(168)
       .optional(),
+    // Until how many hours before the appointment customers may cancel or
+    // reschedule online (0 = right up to the start time).
+    cancelDeadlineHours: z.number().int().min(0).max(168).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: "Keine Änderungen übergeben.",

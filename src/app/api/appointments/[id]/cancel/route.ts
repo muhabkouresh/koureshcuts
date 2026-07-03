@@ -7,6 +7,7 @@ import { notifyWaitlistForDay } from "@/lib/waitlist";
 import { sendAdminPush } from "@/lib/push";
 import { siteConfig } from "@/config/site";
 import { formatDateTimeLabel } from "@/lib/time";
+import { getSettings } from "@/lib/settings";
 
 // POST /api/appointments/[id]/cancel?t=<token>
 // Public, token-guarded self-cancellation for customers.
@@ -50,15 +51,29 @@ export async function POST(
   // Only upcoming, still-active bookings may be cancelled — a COMPLETED or
   // NO_SHOW appointment must keep its status (revenue/statistics), and past
   // appointments can't be "freed up" anymore.
-  const cancellable =
-    (appt.status === AppointmentStatus.PENDING ||
-      appt.status === AppointmentStatus.CONFIRMED) &&
-    appt.startTime > new Date();
-  if (!cancellable) {
+  const active =
+    appt.status === AppointmentStatus.PENDING ||
+    appt.status === AppointmentStatus.CONFIRMED;
+  if (!active || appt.startTime <= new Date()) {
     return Response.json(
       {
         error:
           "Dieser Termin liegt in der Vergangenheit oder kann nicht mehr online storniert werden. Bitte melde dich direkt bei uns.",
+      },
+      { status: 409 },
+    );
+  }
+  // Optional cancellation deadline (admin setting): online cancelling closes
+  // this many hours before the start.
+  const settings = await getSettings();
+  if (
+    settings.cancelDeadlineHours > 0 &&
+    appt.startTime.getTime() - settings.cancelDeadlineHours * 3600_000 <=
+      Date.now()
+  ) {
+    return Response.json(
+      {
+        error: `Online-Absagen sind nur bis ${settings.cancelDeadlineHours} Stunden vor dem Termin möglich. Bitte melde dich direkt bei uns.`,
       },
       { status: 409 },
     );

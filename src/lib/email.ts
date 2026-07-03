@@ -335,6 +335,45 @@ export async function sendRescheduleEmails(
   }
 }
 
+/**
+ * Tell the customer that the SHOP cancelled their appointment (admin action or
+ * a new day off covering the booking), with an optional reason and a CTA to
+ * pick a new time.
+ */
+export async function sendShopCancellationEmail(
+  data: BookingEmailData,
+  reason?: string,
+): Promise<void> {
+  if (!data.customerEmail) return;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const reasonRow = reason?.trim()
+    ? `<p style="font-size:14px;color:#555;margin:14px 0 0"><strong>Grund:</strong> ${reason.trim()}</p>`
+    : "";
+  const html = layout(
+    "",
+    `<div style="text-align:center">
+       <div style="width:56px;height:56px;border-radius:50%;background:#b91c1c;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">&#10005;</div>
+       <h2 style="margin:0;font-size:21px;font-weight:700">Dein Termin wurde leider abgesagt</h2>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       wir müssen deinen Termin leider absagen. Das tut uns sehr leid!</p>
+       ${reasonRow}
+     </div>
+     <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
+     <table style="width:100%;border-collapse:collapse;font-size:14px">
+       <tr><td style="padding:8px 0;color:#888">Service</td><td style="padding:8px 0;text-align:right;font-weight:600">${data.serviceName}</td></tr>
+       <tr><td style="padding:8px 0;color:#888">Abgesagter Termin</td><td style="padding:8px 0;text-align:right;color:#888;text-decoration:line-through">${formatDateTimeLabel(data.start, siteConfig.timezone)}</td></tr>
+     </table>
+     <div style="margin:22px 0 4px;text-align:center">
+       <a href="${siteUrl}/#book" style="display:inline-block;background:#8a1f2b;color:#fff;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700">Neuen Termin buchen</a>
+     </div>`,
+  );
+  await send({
+    to: data.customerEmail,
+    subject: `Abgesagt: ${data.serviceName} — ${formatDateTimeLabel(data.start, siteConfig.timezone)}`,
+    html,
+  });
+}
+
 /** Notify the owner that a customer cancelled (slot freed up). */
 export async function sendCancellationNotice(
   data: BookingEmailData,

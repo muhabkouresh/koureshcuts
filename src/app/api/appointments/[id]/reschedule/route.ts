@@ -13,6 +13,7 @@ import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { notifyWaitlistForDay } from "@/lib/waitlist";
 import { sendAdminPush } from "@/lib/push";
 import { dateKey, formatDateTimeLabel } from "@/lib/time";
+import { getSettings } from "@/lib/settings";
 
 // POST /api/appointments/[id]/reschedule?t=<token>
 // Public, token-guarded self-service reschedule: moves an active, upcoming
@@ -62,6 +63,21 @@ export async function POST(
       {
         error:
           "Dieser Termin kann nicht mehr verschoben werden. Bitte buche einen neuen Termin oder melde dich direkt bei uns.",
+      },
+      { status: 409 },
+    );
+  }
+  // The cancellation deadline applies to rescheduling too — both free up the
+  // old slot on short notice.
+  const settings = await getSettings();
+  if (
+    settings.cancelDeadlineHours > 0 &&
+    appt.startTime.getTime() - settings.cancelDeadlineHours * 3600_000 <=
+      Date.now()
+  ) {
+    return Response.json(
+      {
+        error: `Online-Verschieben ist nur bis ${settings.cancelDeadlineHours} Stunden vor dem Termin möglich. Bitte melde dich direkt bei uns.`,
       },
       { status: 409 },
     );

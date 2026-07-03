@@ -10,6 +10,8 @@ export default function CancelClient({
   whenLabel,
   alreadyCancelled,
   cancellable,
+  deadlineHours,
+  isUpcoming,
 }: {
   id: string;
   token: string;
@@ -17,6 +19,8 @@ export default function CancelClient({
   whenLabel: string;
   alreadyCancelled: boolean;
   cancellable: boolean;
+  deadlineHours: number;
+  isUpcoming: boolean;
 }) {
   const [done, setDone] = useState(alreadyCancelled);
   const [submitting, setSubmitting] = useState(false);
@@ -84,9 +88,11 @@ export default function CancelClient({
           <p className="mt-0.5 text-muted">{whenLabel}</p>
         </div>
         <p className="mt-4 text-sm text-muted">
-          Dieser Termin liegt in der Vergangenheit oder kann nicht mehr online
-          storniert werden. Bitte wende dich direkt an uns — oder buche
-          jederzeit einen neuen Termin auf{" "}
+          {isUpcoming && deadlineHours > 0
+            ? `Online-Absagen sind nur bis ${deadlineHours} Stunden vor dem Termin möglich. `
+            : "Dieser Termin liegt in der Vergangenheit oder kann nicht mehr online storniert werden. "}
+          Bitte wende dich direkt an uns — oder buche jederzeit einen neuen
+          Termin auf{" "}
           <Link href="/" className="text-brand underline underline-offset-2">
             unserer Seite
           </Link>

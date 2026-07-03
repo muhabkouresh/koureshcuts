@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
 import { verifyCancelToken } from "@/lib/token";
-import { formatDateTimeLabel } from "@/lib/time";
+import { formatDateTimeLabel, nowMs } from "@/lib/time";
 import { AppointmentStatus } from "@/lib/constants";
+import { getSettings } from "@/lib/settings";
 import CancelClient from "./CancelClient";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,8 @@ export default async function CancelPage({
         include: { service: true },
       })
     : null;
+  const settings = appt ? await getSettings() : null;
+  const deadlineMs = (settings?.cancelDeadlineHours ?? 0) * 3600_000;
 
   return (
     <main className="flex flex-1 items-center justify-center px-5 py-20">
@@ -49,8 +52,10 @@ export default async function CancelPage({
             cancellable={
               (appt.status === AppointmentStatus.PENDING ||
                 appt.status === AppointmentStatus.CONFIRMED) &&
-              appt.startTime > new Date()
+              appt.startTime.getTime() - deadlineMs > nowMs()
             }
+            deadlineHours={settings?.cancelDeadlineHours ?? 0}
+            isUpcoming={appt.startTime.getTime() > nowMs()}
           />
         )}
       </div>

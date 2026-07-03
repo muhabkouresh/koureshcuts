@@ -7,6 +7,7 @@ import {
   daysInMonth,
   isValidDateStr,
   toDateStr,
+  todayInTz,
   weekdayOf,
   zonedToUtc,
 } from "./time";
@@ -167,6 +168,35 @@ export async function getAvailability(
     durationMinutes: service.durationMinutes,
     slots,
   };
+}
+
+/**
+ * Earliest bookable slot for a service (across this and next month — the
+ * booking window never reaches further than that plus change). Used for the
+ * "next free appointment" teaser on the landing page.
+ */
+export async function getNextFreeSlot(
+  serviceId: string,
+): Promise<{ start: string } | null> {
+  const today = todayInTz(tz);
+  const [y, m] = today.split("-").map(Number);
+
+  for (let i = 0; i < 2; i++) {
+    let year = y;
+    let month0 = m - 1 + i;
+    if (month0 > 11) {
+      month0 -= 12;
+      year += 1;
+    }
+    const { days } = await getMonthAvailability(serviceId, year, month0);
+    for (const day of days) {
+      const dateStr = toDateStr(year, month0, day);
+      if (dateStr < today) continue;
+      const { slots } = await getAvailability(serviceId, dateStr);
+      if (slots.length > 0) return { start: slots[0].start };
+    }
+  }
+  return null;
 }
 
 /**

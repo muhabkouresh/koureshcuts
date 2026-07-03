@@ -69,6 +69,7 @@ export default async function AdminPage() {
     bookingWindowDays: settings.bookingWindowDays,
     reminderEnabled: settings.reminderEnabled,
     reminderLeadHours: settings.reminderLeadHours,
+    cancelDeadlineHours: settings.cancelDeadlineHours,
     revenue,
     services,
     appointments: appointments.map((a) => ({
