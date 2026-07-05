@@ -59,7 +59,13 @@ export default function RequestLinkForm() {
         setError(d.error ?? "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
         return;
       }
-      setDone(true);
+      if (typeof d.url === "string" && d.url) {
+        // Direct access: straight to the appointment list, no email round trip.
+        setDone(true);
+        window.location.href = d.url;
+        return;
+      }
+      setError("Etwas ist schiefgelaufen. Bitte erneut versuchen.");
     } catch {
       setError("Netzwerkfehler. Bitte erneut versuchen.");
     } finally {
@@ -99,9 +105,7 @@ export default function RequestLinkForm() {
   if (done) {
     return (
       <div className="mt-5 rounded-xl bg-brand-soft px-4 py-4 text-sm font-medium text-brand-700">
-        ✓ Wenn zu dieser E-Mail-Adresse Termine existieren, haben wir dir
-        soeben einen Link geschickt. Schau in dein Postfach (ggf. auch im
-        Spam-Ordner).
+        ✓ Einen Moment — deine Termine werden geöffnet…
       </div>
     );
   }
@@ -123,7 +127,7 @@ export default function RequestLinkForm() {
         disabled={submitting}
         className="rounded-full bg-brand py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
       >
-        {submitting ? "Wird gesendet…" : "Link anfordern"}
+        {submitting ? "Wird geöffnet…" : "Termine anzeigen"}
       </button>
     </form>
   );

@@ -1,14 +1,14 @@
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { myAppointmentsRequestSchema } from "@/lib/validation";
-import { sendMyAppointmentsEmail } from "@/lib/email";
+import { myAppointmentsUrl } from "@/lib/token";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 
-// POST /api/my-appointments — email a magic link listing the customer's
-// appointments. Responds identically whether or not the email is known, so
-// the endpoint can't be used to probe which addresses have bookings.
+// POST /api/my-appointments — direct access: entering an email immediately
+// returns the signed "Meine Termine" URL (owner's decision: no confirmation
+// link round trip). The IP rate limit keeps bulk probing expensive, and the
+// list page shows nothing for addresses without bookings.
 export async function POST(request: NextRequest) {
-  const limit = rateLimit(`myappts:${clientIp(request)}`, 3, 10 * 60_000);
+  const limit = rateLimit(`myappts:${clientIp(request)}`, 5, 10 * 60_000);
   if (!limit.ok) {
     return Response.json(
       { error: "Zu viele Anfragen. Bitte versuche es später erneut." },
@@ -29,20 +29,6 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  const email = parsed.data.email;
 
-  const exists = await prisma.appointment.findFirst({
-    where: { customerEmail: { equals: email, mode: "insensitive" } },
-    select: { id: true },
-  });
-  if (exists) {
-    try {
-      await sendMyAppointmentsEmail(email);
-    } catch (err) {
-      console.error("my-appointments email failed", err);
-    }
-  }
-
-  // Same answer either way (no address probing).
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, url: myAppointmentsUrl(parsed.data.email) });
 }

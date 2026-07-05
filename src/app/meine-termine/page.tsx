@@ -19,9 +19,8 @@ export default function MyAppointmentsPage() {
           Meine Termine
         </h2>
         <p className="mt-2 text-sm text-muted">
-          Gib die E-Mail-Adresse ein, mit der du gebucht hast. Wir senden dir
-          einen Link, mit dem du alle deine Termine sehen, verschieben oder
-          absagen kannst.
+          Gib die E-Mail-Adresse ein, mit der du gebucht hast — du siehst
+          sofort alle deine Termine und kannst sie verschieben oder absagen.
         </p>
         <RequestLinkForm />
       </div>
