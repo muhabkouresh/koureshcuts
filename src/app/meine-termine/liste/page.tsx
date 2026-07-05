@@ -5,6 +5,16 @@ import { verifyEmailToken, cancelToken } from "@/lib/token";
 import { formatDateTimeLabel, nowMs } from "@/lib/time";
 import { priceFull } from "@/lib/format";
 import { ACTIVE_STATUSES } from "@/lib/constants";
+import RememberDevice from "./RememberDevice";
+
+// Status → short German label + badge style for the history section.
+function historyBadge(status: string): { label: string; cls: string } {
+  if (status === "CANCELLED")
+    return { label: "storniert", cls: "bg-red-50 text-red-700" };
+  if (status === "NO_SHOW")
+    return { label: "nicht erschienen", cls: "bg-orange-50 text-orange-700" };
+  return { label: "wahrgenommen", cls: "bg-emerald-50 text-emerald-700" };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +52,21 @@ export default async function MyAppointmentsListPage({
       })
     : [];
 
+  // Booking history: the most recent past appointments (attended, cancelled,
+  // no-show). Admin slot blocks are internal and never shown.
+  const history = valid
+    ? await prisma.appointment.findMany({
+        where: {
+          customerEmail: { equals: email, mode: "insensitive" },
+          status: { not: "BLOCKED" },
+          startTime: { lt: new Date(nowMs()) },
+        },
+        orderBy: { startTime: "desc" },
+        take: 10,
+        include: { service: { select: { name: true } } },
+      })
+    : [];
+
   return (
     <main className="flex flex-1 items-start justify-center px-5 py-14">
       <div className="w-full max-w-lg rounded-2xl border border-line bg-background p-7 shadow-sm">
@@ -62,6 +87,7 @@ export default async function MyAppointmentsListPage({
           </p>
         ) : (
           <>
+            <RememberDevice e={e ?? ""} t={t ?? ""} />
             <h2 className="mt-4 text-2xl font-bold tracking-tight">
               Deine Termine
             </h2>
@@ -110,12 +136,60 @@ export default async function MyAppointmentsListPage({
               </ul>
             )}
 
-            <p className="mt-6 text-xs text-muted">
-              Neuen Termin buchen?{" "}
-              <Link href="/" className="text-brand underline underline-offset-2">
-                Zur Startseite
-              </Link>
-            </p>
+            {history.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-sm font-semibold text-muted">
+                  Vergangene Termine
+                </h3>
+                <ul className="mt-3 flex flex-col gap-2">
+                  {history.map((a) => {
+                    const badge = historyBadge(a.status);
+                    return (
+                      <li
+                        key={a.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-line bg-background px-4 py-3 text-sm"
+                      >
+                        <span className="min-w-0">
+                          <span className="block font-medium">
+                            {a.service.name}
+                          </span>
+                          <span className="block text-xs text-muted">
+                            {formatDateTimeLabel(
+                              a.startTime,
+                              siteConfig.timezone,
+                            )}
+                          </span>
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${badge.cls}`}
+                        >
+                          {badge.label}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-1 text-xs text-muted">
+              <p>
+                Neuen Termin buchen?{" "}
+                <Link href="/" className="text-brand underline underline-offset-2">
+                  Zur Startseite
+                </Link>
+              </p>
+              <p>
+                Dieses Gerät merkt sich deine Termine — beim nächsten Besuch
+                von „Meine Termine“ bist du direkt hier.{" "}
+                <Link
+                  href="/meine-termine"
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Andere E-Mail verwenden
+                </Link>
+              </p>
+            </div>
           </>
         )}
       </div>

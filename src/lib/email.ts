@@ -153,7 +153,8 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
      </div>
      <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
      <table style="width:100%;border-collapse:collapse">${detailRows}</table>
-     <p style="font-size:12px;color:#9ca3af;margin-top:18px">Eine Kalenderdatei (.ics) ist ebenfalls angehängt.</p>`,
+     <p style="font-size:12px;color:#9ca3af;margin-top:18px">Eine Kalenderdatei (.ics) ist ebenfalls angehängt.</p>
+     <p style="font-size:12px;color:#9ca3af;margin-top:8px">Alle deine Buchungen im Überblick: <a href="${myAppointmentsUrl(data.customerEmail)}" style="color:#8a1f2b;text-decoration:underline">Meine Termine</a></p>`,
   );
 
   await send({

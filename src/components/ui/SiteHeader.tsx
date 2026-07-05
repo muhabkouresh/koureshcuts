@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { siteConfig } from "@/config/site";
 import ScrollLink from "@/components/ui/ScrollLink";
@@ -39,12 +40,20 @@ export default function SiteHeader() {
           </span>
         </ScrollLink>
 
-        <ScrollLink
-          targetId="book"
-          className="btn-shine rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03]"
-        >
-          Termin buchen
-        </ScrollLink>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/meine-termine"
+            className="text-sm font-medium text-muted transition-colors hover:text-foreground"
+          >
+            Meine Termine
+          </Link>
+          <ScrollLink
+            targetId="book"
+            className="btn-shine rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03]"
+          >
+            Termin buchen
+          </ScrollLink>
+        </div>
       </div>
     </header>
   );
