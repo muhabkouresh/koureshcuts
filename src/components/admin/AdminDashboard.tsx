@@ -16,6 +16,7 @@ import {
   formatDateTimeLabel,
   longDateFromStr,
   minutesToHHMM,
+  monthLabel,
   nowMs,
   todayInTz,
   weekdayOf,
@@ -149,7 +150,7 @@ export default function AdminDashboard({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<
-    "termine" | "kunden" | "umsatz" | "services" | "verfuegbarkeit"
+    "termine" | "kunden" | "umsatz" | "services" | "verfuegbarkeit" | "verspaetungen"
   >("termine");
 
   async function logout() {
@@ -186,6 +187,7 @@ export default function AdminDashboard({
             ["umsatz", "Umsatz"],
             ["services", "Services"],
             ["verfuegbarkeit", "Verfügbarkeit"],
+            ["verspaetungen", "Verspätungen"],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -233,6 +235,7 @@ export default function AdminDashboard({
           onChange={() => router.refresh()}
         />
       )}
+      {tab === "verspaetungen" && <VerspaetungenTab />}
     </main>
   );
 }
@@ -1017,6 +1020,236 @@ function DelayCard() {
       </button>
       {msg && <span className="text-xs text-amber-900">{msg}</span>}
     </section>
+  );
+}
+
+type DelayEntry = {
+  id: string;
+  date: string;
+  minutes: number;
+  note: string;
+  notified: number;
+};
+
+// Delay journal: log delays (manually or via the broadcast) and see them
+// summed per week, month, and over the last 12 months.
+function VerspaetungenTab() {
+  const [entries, setEntries] = useState<DelayEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [date, setDate] = useState(() => todayInTz(tz));
+  const [minutes, setMinutes] = useState(15);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function load() {
+    fetch("/api/admin/delays")
+      .then((r) => r.json())
+      .then((d) => setEntries(d.delays ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => {
+    load();
+  }, []);
+
+  // Sums over the shop-timezone calendar (week starts Monday).
+  const today = todayInTz(tz);
+  const monday = addDaysToDateStr(today, -((weekdayOf(today) + 6) % 7));
+  const nextMonday = addDaysToDateStr(monday, 7);
+  const monthKey = today.slice(0, 7);
+
+  let weekSum = 0;
+  let monthSum = 0;
+  let totalSum = 0;
+  const byMonth = new Map<string, number>();
+  for (const e of entries) {
+    const ds = dateKey(new Date(e.date), tz);
+    totalSum += e.minutes;
+    if (ds >= monday && ds < nextMonday) weekSum += e.minutes;
+    if (ds.startsWith(monthKey)) monthSum += e.minutes;
+    const mk = ds.slice(0, 7);
+    byMonth.set(mk, (byMonth.get(mk) ?? 0) + e.minutes);
+  }
+  const monthRows = [...byMonth.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, 6);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/delays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, minutes, note }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error ?? "Konnte nicht gespeichert werden.");
+        return;
+      }
+      setNote("");
+      load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: string) {
+    await fetch(`/api/admin/delays/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  return (
+    <div className="mt-6 flex flex-col gap-5">
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard
+          label="Diese Woche"
+          value={weekSum}
+          unit="Min."
+          icon={
+            <>
+              <circle cx="12" cy="12" r="9" strokeWidth="2" />
+              <path d="M12 7v5l3 2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </>
+          }
+        />
+        <StatCard
+          label="Dieser Monat"
+          value={monthSum}
+          unit="Min."
+          icon={
+            <>
+              <rect x="3" y="4" width="18" height="17" rx="3" strokeWidth="2" />
+              <path d="M3 9h18M8 2v4M16 2v4" strokeWidth="2" strokeLinecap="round" />
+            </>
+          }
+        />
+        <StatCard
+          label="Letzte 12 Monate"
+          value={totalSum}
+          unit="Min."
+          icon={
+            <path d="M4 19V9M10 19V5M16 19v-7M22 19H2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          }
+        />
+      </div>
+
+      <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+        <h2 className="text-sm font-semibold">Verspätung eintragen</h2>
+        <p className="mt-1 text-xs text-muted">
+          Nur fürs Protokoll — Kunden werden hierbei nicht benachrichtigt.
+          (Der „Kunden informieren“-Knopf im Termine-Tab trägt hier automatisch
+          mit ein.)
+        </p>
+        <form onSubmit={submit} className="mt-3 grid gap-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-muted">Datum</span>
+              <div className="w-[12rem]">
+                <DatePicker value={date} onChange={setDate} />
+              </div>
+            </div>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted">Minuten</span>
+              <input
+                type="number"
+                min={1}
+                max={600}
+                value={minutes}
+                onChange={(e) => setMinutes(Number(e.target.value))}
+                className="w-24 rounded-lg border border-line bg-background px-3 py-2"
+              />
+            </label>
+            <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-sm">
+              <span className="text-muted">Notiz (optional)</span>
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={200}
+                placeholder="z. B. Kunde kam zu spät"
+                className="rounded-lg border border-line bg-background px-3 py-2"
+              />
+            </label>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50"
+            >
+              {saving ? "Speichern…" : "Eintragen"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {monthRows.length > 0 && (
+        <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+          <h2 className="text-sm font-semibold">Summiert pro Monat</h2>
+          <ul className="mt-3 flex flex-col gap-1.5 text-sm">
+            {monthRows.map(([mk, sum]) => {
+              const [y, m] = mk.split("-").map(Number);
+              return (
+                <li
+                  key={mk}
+                  className="flex items-center justify-between rounded-lg bg-surface px-3 py-2"
+                >
+                  <span>{monthLabel(y, m - 1)}</span>
+                  <span className="font-semibold">{sum} Min.</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+        <h2 className="text-sm font-semibold">Alle Einträge</h2>
+        {loading ? (
+          <p className="mt-3 text-sm text-muted">Lädt…</p>
+        ) : entries.length === 0 ? (
+          <p className="mt-3 rounded-lg bg-surface px-3 py-3 text-sm text-muted">
+            Noch keine Verspätungen protokolliert.
+          </p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-2">
+            {entries.map((e) => (
+              <li
+                key={e.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-sm"
+              >
+                <span className="min-w-0">
+                  <span className="font-medium">
+                    {formatDateLabel(new Date(e.date), tz)}
+                  </span>
+                  <span className="ml-2 font-semibold text-amber-700">
+                    +{e.minutes} Min.
+                  </span>
+                  {e.note && <span className="text-muted"> · {e.note}</span>}
+                  {e.notified > 0 && (
+                    <span className="text-muted">
+                      {" "}
+                      · {e.notified} Kunde(n) benachrichtigt
+                    </span>
+                  )}
+                </span>
+                <button
+                  onClick={() => remove(e.id)}
+                  className="shrink-0 text-xs text-muted underline underline-offset-4 hover:text-red-600"
+                >
+                  Löschen
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 }
 

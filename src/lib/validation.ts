@@ -46,6 +46,13 @@ export const delayNoticeSchema = z.object({
   minutes: z.number().int().min(5).max(180),
 });
 
+// Manually logged delay entry (admin delay journal).
+export const delayLogSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ungültiges Datum."),
+  minutes: z.number().int().min(1, "Mind. 1 Minute.").max(600),
+  note: z.string().trim().max(200).optional().default(""),
+});
+
 // Customer requests a magic link listing their appointments.
 export const myAppointmentsRequestSchema = z.object({
   email: z.string().trim().email("Gültige E-Mail eingeben.").max(200),

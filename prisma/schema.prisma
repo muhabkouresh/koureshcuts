@@ -104,6 +104,20 @@ model Appointment {
   @@index([status])
 }
 
+/// A logged delay ("running late") entry. Created manually in the admin or
+/// automatically when the delay broadcast is sent. `date` is the start-of-day
+/// UTC instant for the shop timezone; `notified` counts emailed customers.
+model DelayLog {
+  id        String   @id @default(cuid())
+  date      DateTime
+  minutes   Int
+  note      String   @default("")
+  notified  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}
+
 /// A manually blocked customer email (admin decision): no online booking.
 /// Emails are stored lowercase. Separate from the automatic no-show block.
 model BlockedCustomer {
