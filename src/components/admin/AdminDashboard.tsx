@@ -82,6 +82,7 @@ type Data = {
   reminderEnabled: boolean;
   reminderLeadHours: number;
   cancelDeadlineHours: number;
+  maxActiveBookingsPerEmail: number;
   revenue: RevenueStats;
   services: Service[];
   appointments: Appointment[];
@@ -228,6 +229,7 @@ export default function AdminDashboard({
           reminderEnabled={data.reminderEnabled}
           reminderLeadHours={data.reminderLeadHours}
           cancelDeadlineHours={data.cancelDeadlineHours}
+          maxActiveBookingsPerEmail={data.maxActiveBookingsPerEmail}
           onChange={() => router.refresh()}
         />
       )}
@@ -428,6 +430,8 @@ function TermineTab({
           }}
         />
       )}
+
+      {stats.todayCount > 0 && <DelayCard />}
 
       {/* Day header + week strip */}
       <div className="rounded-2xl border border-line bg-background shadow-soft">
@@ -953,6 +957,66 @@ function DaySlots({
         </div>
       )}
     </div>
+  );
+}
+
+// One-tap "running late today" broadcast: informs every remaining customer
+// today by email. Appointments themselves stay unchanged.
+function DelayCard() {
+  const [minutes, setMinutes] = useState(15);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function send() {
+    if (
+      !window.confirm(
+        `Alle heutigen Kunden per E-Mail über ca. ${minutes} Min. Verzögerung informieren?`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/notify-delay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minutes }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setMsg(
+        res.ok
+          ? `${d.sent} von ${d.considered} Kunde(n) informiert.`
+          : (d.error ?? "Fehler beim Senden."),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm">
+      <span className="font-semibold text-amber-900">Läufst du heute später?</span>
+      <select
+        value={minutes}
+        onChange={(e) => setMinutes(Number(e.target.value))}
+        className="rounded-lg border border-amber-300 bg-background px-2 py-1.5 text-sm"
+      >
+        {[15, 30, 45, 60].map((m) => (
+          <option key={m} value={m}>
+            ca. +{m} Min.
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={send}
+        disabled={busy}
+        className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+      >
+        {busy ? "Sendet…" : "Heutige Kunden informieren"}
+      </button>
+      {msg && <span className="text-xs text-amber-900">{msg}</span>}
+    </section>
   );
 }
 
@@ -1658,6 +1722,27 @@ function KundenTab({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [schedulingFor, setSchedulingFor] = useState<string | null>(null);
   const [newAppt, setNewAppt] = useState(false);
+  // Manual booking blocklist (lowercase emails), loaded alongside customers.
+  const [blocked, setBlocked] = useState<
+    { email: string; reason: string }[]
+  >([]);
+  const [blockBusy, setBlockBusy] = useState(false);
+
+  function loadBlocklist() {
+    fetch("/api/admin/blocklist")
+      .then((r) => r.json())
+      .then((d) =>
+        setBlocked(
+          (d.blocked ?? []).map(
+            (b: { email: string; reason: string }) => ({
+              email: b.email,
+              reason: b.reason,
+            }),
+          ),
+        ),
+      )
+      .catch(() => {});
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -1673,10 +1758,36 @@ function KundenTab({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    loadBlocklist();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const blockedSet = new Set(blocked.map((b) => b.email));
+
+  async function toggleBlock(email: string, isBlocked: boolean) {
+    if (!email) return;
+    if (
+      !isBlocked &&
+      !window.confirm(
+        `${email} für Online-Buchungen sperren? Der Kunde kann dann nur noch direkt im Shop buchen.`,
+      )
+    ) {
+      return;
+    }
+    setBlockBusy(true);
+    try {
+      await fetch("/api/admin/blocklist", {
+        method: isBlocked ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      loadBlocklist();
+    } finally {
+      setBlockBusy(false);
+    }
+  }
 
   const q = query.toLowerCase().trim();
   const filtered = q
@@ -1781,6 +1892,11 @@ function KundenTab({
                           zuletzt {formatDateLabel(new Date(c.lastStart), tz)}
                         </span>
                       )}
+                      {c.email && blockedSet.has(c.email.toLowerCase()) && (
+                        <span className="rounded-full bg-red-50 px-2.5 py-1 font-medium text-red-700">
+                          gesperrt
+                        </span>
+                      )}
                     </div>
                     {(c.phone || c.email) && (
                       <div className="mt-2 flex flex-wrap gap-3 text-sm">
@@ -1816,12 +1932,34 @@ function KundenTab({
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => setSchedulingFor(key)}
-                        className="mt-3 rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background"
-                      >
-                        + Termin eintragen
-                      </button>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => setSchedulingFor(key)}
+                          className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background"
+                        >
+                          + Termin eintragen
+                        </button>
+                        {c.email && (
+                          <button
+                            disabled={blockBusy}
+                            onClick={() =>
+                              toggleBlock(
+                                c.email.toLowerCase(),
+                                blockedSet.has(c.email.toLowerCase()),
+                              )
+                            }
+                            className={`rounded-full px-4 py-2 text-xs font-semibold ring-1 disabled:opacity-50 ${
+                              blockedSet.has(c.email.toLowerCase())
+                                ? "bg-red-50 text-red-700 ring-red-200"
+                                : "text-muted ring-line hover:text-red-600 hover:ring-red-300"
+                            }`}
+                          >
+                            {blockedSet.has(c.email.toLowerCase())
+                              ? "Sperre aufheben"
+                              : "Online-Buchung sperren"}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -1829,6 +1967,39 @@ function KundenTab({
             );
           })}
         </ul>
+      )}
+
+      {blocked.length > 0 && (
+        <section className="rounded-2xl border border-red-200 bg-red-50/40 p-4">
+          <h3 className="text-sm font-semibold text-red-800">
+            Gesperrte E-Mail-Adressen ({blocked.length})
+          </h3>
+          <p className="mt-1 text-xs text-red-700/80">
+            Diese Adressen können nicht online buchen.
+          </p>
+          <ul className="mt-3 flex flex-col gap-2">
+            {blocked.map((b) => (
+              <li
+                key={b.email}
+                className="flex items-center justify-between gap-3 rounded-lg bg-background px-3 py-2 text-sm ring-1 ring-red-100"
+              >
+                <span className="min-w-0 truncate">
+                  {b.email}
+                  {b.reason && (
+                    <span className="text-muted"> · {b.reason}</span>
+                  )}
+                </span>
+                <button
+                  disabled={blockBusy}
+                  onClick={() => toggleBlock(b.email, true)}
+                  className="shrink-0 text-xs text-muted underline underline-offset-4 hover:text-foreground disabled:opacity-50"
+                >
+                  Entsperren
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );
@@ -2052,6 +2223,7 @@ function Availability({
   reminderEnabled,
   reminderLeadHours,
   cancelDeadlineHours,
+  maxActiveBookingsPerEmail,
   onChange,
 }: {
   hours: DayHours[];
@@ -2061,11 +2233,13 @@ function Availability({
   reminderEnabled: boolean;
   reminderLeadHours: number;
   cancelDeadlineHours: number;
+  maxActiveBookingsPerEmail: number;
   onChange: () => void;
 }) {
   return (
     <div className="mt-6 flex flex-col gap-8">
       <BookingWindowCard days={bookingWindowDays} onChange={onChange} />
+      <BookingLimitCard max={maxActiveBookingsPerEmail} onChange={onChange} />
       <CancelDeadlineCard hours={cancelDeadlineHours} onChange={onChange} />
       <RemindersCard
         enabled={reminderEnabled}
@@ -2124,6 +2298,76 @@ function BookingWindowCard({
           className="w-20 rounded-lg border border-line bg-background px-3 py-2"
         />
         <span className="text-muted">Tage im Voraus</span>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+        >
+          {saving ? "Speichern…" : "Speichern"}
+        </button>
+        {msg && <span className="text-sm text-muted">{msg}</span>}
+      </div>
+    </section>
+  );
+}
+
+// Cap on simultaneous upcoming bookings per customer email (anti-hoarding).
+function BookingLimitCard({
+  max: initialMax,
+  onChange,
+}: {
+  max: number;
+  onChange: () => void;
+}) {
+  const [max, setMax] = useState(initialMax);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const OPTIONS = [
+    { v: 0, label: "Unbegrenzt" },
+    { v: 1, label: "1 Termin gleichzeitig" },
+    { v: 2, label: "2 Termine gleichzeitig" },
+    { v: 3, label: "3 Termine gleichzeitig" },
+  ];
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxActiveBookingsPerEmail: max }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setMsg(res.ok ? "Gespeichert." : (d.error ?? "Fehler."));
+      if (res.ok) onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">Buchungslimit pro Kunde</h2>
+      <p className="mt-1 text-xs text-muted">
+        Wie viele offene Termine eine E-Mail-Adresse gleichzeitig haben darf —
+        verhindert, dass einzelne Kunden viele Slots blockieren. Hinweis: Bei
+        Limit 1 funktioniert auch das Anhängen eines zweiten Termins mit
+        derselben E-Mail nicht mehr.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        <select
+          value={max}
+          onChange={(e) => setMax(Number(e.target.value))}
+          className="rounded-lg border border-line bg-background px-3 py-2"
+        >
+          {OPTIONS.map((o) => (
+            <option key={o.v} value={o.v}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         <button
           onClick={save}
           disabled={saving}

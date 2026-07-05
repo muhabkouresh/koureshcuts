@@ -3,7 +3,7 @@ import { siteConfig } from "@/config/site";
 import { formatDateTimeLabel, formatClock, formatLongDate } from "./time";
 import { priceFull } from "./format";
 import { buildIcs, googleCalendarUrl, type CalendarEvent } from "./calendar";
-import { cancelUrl, rescheduleUrl } from "./token";
+import { cancelUrl, rescheduleUrl, myAppointmentsUrl } from "./token";
 
 // Email delivery via Resend. When RESEND_API_KEY is unset (local dev), emails
 // are logged to the console instead of being sent, so the flow is testable
@@ -370,6 +370,54 @@ export async function sendShopCancellationEmail(
   await send({
     to: data.customerEmail,
     subject: `Abgesagt: ${data.serviceName} — ${formatDateTimeLabel(data.start, siteConfig.timezone)}`,
+    html,
+  });
+}
+
+/**
+ * One-tap "running late" heads-up to a customer with an appointment later
+ * today. Purely informational — the appointment itself is unchanged.
+ */
+export async function sendDelayEmail(
+  data: Pick<BookingEmailData, "customerName" | "customerEmail" | "serviceName" | "start">,
+  minutes: number,
+): Promise<{ ok: boolean }> {
+  const when = formatDateTimeLabel(data.start, siteConfig.timezone);
+  const html = layout(
+    "",
+    `<div style="text-align:center">
+       <div style="width:56px;height:56px;border-radius:50%;background:#d97706;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">&#8987;</div>
+       <h2 style="margin:0;font-size:21px;font-weight:700">Es verschiebt sich etwas</h2>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       kurze Info zu deinem heutigen Termin (<strong>${data.serviceName}</strong>, ${when}):<br/>
+       Es kommt heute leider zu einer Verzögerung von etwa <strong>${minutes} Minuten</strong>.</p>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Dein Termin bleibt bestehen — komm einfach entsprechend später. Danke für dein Verständnis!</p>
+     </div>`,
+  );
+  return send({
+    to: data.customerEmail,
+    subject: `Kurze Info: ca. ${minutes} Min. Verzögerung heute`,
+    html,
+  });
+}
+
+/** Magic link listing all of a customer's upcoming appointments. */
+export async function sendMyAppointmentsEmail(email: string): Promise<{ ok: boolean }> {
+  const url = myAppointmentsUrl(email);
+  const html = layout(
+    "",
+    `<div style="text-align:center">
+       <h2 style="margin:0;font-size:21px;font-weight:700">Deine Termine bei ${siteConfig.name}</h2>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Mit diesem Link siehst du alle deine anstehenden Termine und kannst sie verschieben oder absagen:</p>
+       <div style="margin:22px 0 8px">
+         <a href="${url}" style="display:inline-block;background:#8a1f2b;color:#fff;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700">Meine Termine ansehen</a>
+       </div>
+       <p style="font-size:12px;color:#9ca3af;margin-top:14px">Du hast das nicht angefordert? Dann kannst du diese E-Mail ignorieren.</p>
+     </div>`,
+  );
+  return send({
+    to: email,
+    subject: `Deine Termine bei ${siteConfig.name}`,
     html,
   });
 }

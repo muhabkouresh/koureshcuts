@@ -55,6 +55,8 @@ model Settings {
   /// Until how many hours before the start customers may cancel/reschedule
   /// online (0 = up to the start time).
   cancelDeadlineHours Int    @default(0)
+  /// Max simultaneous upcoming bookings per customer email (0 = unlimited).
+  maxActiveBookingsPerEmail Int @default(0)
   updatedAt         DateTime @updatedAt
 }
 
@@ -100,6 +102,15 @@ model Appointment {
 
   @@index([startTime])
   @@index([status])
+}
+
+/// A manually blocked customer email (admin decision): no online booking.
+/// Emails are stored lowercase. Separate from the automatic no-show block.
+model BlockedCustomer {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  reason    String   @default("")
+  createdAt DateTime @default(now())
 }
 
 /// A Web-Push subscription of the admin PWA (owner's phone/browser). Every

@@ -35,6 +35,22 @@ export const adminLoginSchema = z.object({
   password: z.string().min(1, "Password is required."),
 });
 
+// Manually block/unblock a customer email from online booking (admin).
+export const blockCustomerSchema = z.object({
+  email: z.string().trim().email("Gültige E-Mail eingeben.").max(200),
+  reason: z.string().trim().max(200).optional().default(""),
+});
+
+// One-tap "running late" broadcast to today's remaining customers (admin).
+export const delayNoticeSchema = z.object({
+  minutes: z.number().int().min(5).max(180),
+});
+
+// Customer requests a magic link listing their appointments.
+export const myAppointmentsRequestSchema = z.object({
+  email: z.string().trim().email("Gültige E-Mail eingeben.").max(200),
+});
+
 // Admin manually scheduling an appointment. More permissive than the public
 // form: email is optional (walk-ins), and time is not restricted to open slots.
 export const adminCreateAppointmentSchema = z.object({
@@ -129,6 +145,8 @@ export const settingsSchema = z
     // Until how many hours before the appointment customers may cancel or
     // reschedule online (0 = right up to the start time).
     cancelDeadlineHours: z.number().int().min(0).max(168).optional(),
+    // Max simultaneous upcoming bookings per email (0 = unlimited).
+    maxActiveBookingsPerEmail: z.number().int().min(0).max(10).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: "Keine Änderungen übergeben.",

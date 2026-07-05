@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { siteConfig } from "@/config/site";
 import { priceShort, priceFull } from "@/lib/format";
 import {
+  dateKey,
   daysInMonth,
   firstWeekdayMondayFirst,
   formatClock,
@@ -512,7 +513,167 @@ export default function BookingFlow({ services }: { services: Service[] }) {
               Weiteren Termin buchen
             </button>
           </div>
+
+          {service && (
+            <SecondSlotOffer
+              service={service}
+              firstEndIso={result.end}
+              bookerEmail={email}
+            />
+          )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// After a successful booking: if the slot immediately after is still free,
+// offer to book it for a second person (friend/brother) in one step —
+// customers already do this manually by going through the flow twice.
+function SecondSlotOffer({
+  service,
+  firstEndIso,
+  bookerEmail,
+}: {
+  service: Service;
+  firstEndIso: string;
+  bookerEmail: string;
+}) {
+  const [slot, setSlot] = useState<Slot | null>(null);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState(bookerEmail);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const dateStr = dateKey(new Date(firstEndIso), tz);
+    fetch(`/api/availability?serviceId=${service.id}&date=${dateStr}`, {
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        const follow = (d.slots ?? []).find(
+          (s: Slot) => s.start === firstEndIso,
+        );
+        if (follow) setSlot(follow);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [service.id, firstEndIso]);
+
+  async function book(e: React.FormEvent) {
+    e.preventDefault();
+    if (!slot) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId: service.id,
+          start: slot.start,
+          customerName: name,
+          customerEmail: email,
+          notes: "",
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error ?? "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
+        if (res.status === 409) setSlot(null);
+        return;
+      }
+      setDone(true);
+    } catch {
+      setError("Netzwerkfehler. Bitte erneut versuchen.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!slot) return null;
+
+  if (done) {
+    return (
+      <div className="mt-6 animate-fade-up rounded-2xl bg-emerald-50 px-5 py-4 text-left text-sm ring-1 ring-emerald-200">
+        <p className="font-semibold text-emerald-800">
+          ✓ Zweiter Termin gebucht — {formatClock(new Date(slot.start), tz)} Uhr
+        </p>
+        <p className="mt-1 text-emerald-700">
+          Die Bestätigung wurde an{" "}
+          <span className="font-medium">{email}</span> gesendet.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 rounded-2xl border border-line bg-surface p-5 text-left">
+      {!open ? (
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted">
+            <span className="font-semibold text-foreground">
+              Kommst du zu zweit?
+            </span>{" "}
+            Der Termin direkt danach ({formatClock(new Date(slot.start), tz)}{" "}
+            Uhr) ist noch frei.
+          </p>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="shrink-0 rounded-full bg-foreground px-5 py-2 text-sm font-semibold text-background"
+          >
+            Termin anhängen
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={book} className="flex animate-fade-up flex-col gap-3">
+          <p className="text-sm font-semibold">
+            {service.name} · {formatClock(new Date(slot.start), tz)} Uhr — für
+            wen ist der zweite Termin?
+          </p>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name der zweiten Person"
+            autoComplete="off"
+            className="w-full rounded-xl bg-background px-4 py-3 text-sm outline-none ring-1 ring-line focus:ring-brand"
+          />
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="E-Mail für die Bestätigung"
+            className="w-full rounded-xl bg-background px-4 py-3 text-sm outline-none ring-1 ring-line focus:ring-brand"
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {submitting ? "Wird gebucht…" : "Verbindlich buchen"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="text-sm text-muted underline underline-offset-4"
+            >
+              Doch nicht
+            </button>
+          </div>
+        </form>
       )}
     </div>
   );

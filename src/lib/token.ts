@@ -29,3 +29,31 @@ export function rescheduleUrl(id: string): string {
   const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   return `${base}/termin/verschieben/${id}?t=${cancelToken(id)}`;
 }
+
+// "Meine Termine" magic link: HMAC over the lowercased email. The "email:"
+// prefix domain-separates these tokens from the appointment-id cancel tokens.
+export function emailToken(email: string): string {
+  if (!secret) return "";
+  return crypto
+    .createHmac("sha256", secret)
+    .update(`email:${email.trim().toLowerCase()}`)
+    .digest("base64url");
+}
+
+export function verifyEmailToken(
+  email: string,
+  token: string | undefined,
+): boolean {
+  if (!secret || !token) return false;
+  const expected = emailToken(email);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(token);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/** Full "Meine Termine" URL for a customer email. */
+export function myAppointmentsUrl(email: string): string {
+  const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const e = Buffer.from(email.trim().toLowerCase()).toString("base64url");
+  return `${base}/meine-termine/liste?e=${e}&t=${emailToken(email)}`;
+}

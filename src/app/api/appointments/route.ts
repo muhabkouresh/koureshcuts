@@ -3,7 +3,12 @@ import { formatInTimeZone } from "date-fns-tz";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
-import { BUSY_STATUSES, AppointmentStatus } from "@/lib/constants";
+import {
+  ACTIVE_STATUSES,
+  BUSY_STATUSES,
+  AppointmentStatus,
+} from "@/lib/constants";
+import { getSettings } from "@/lib/settings";
 import { createAppointmentSchema } from "@/lib/validation";
 import { getAvailability } from "@/lib/availability";
 import { sendConfirmationEmails } from "@/lib/email";
@@ -47,6 +52,21 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Service nicht gefunden." }, { status: 400 });
   }
 
+  // Manually blocked by the shop owner (admin blocklist).
+  const manuallyBlocked = await prisma.blockedCustomer.findUnique({
+    where: { email: input.customerEmail.toLowerCase() },
+    select: { id: true },
+  });
+  if (manuallyBlocked) {
+    return Response.json(
+      {
+        error:
+          "Online-Buchung ist für diese E-Mail-Adresse nicht möglich. Bitte melde dich direkt bei uns im Shop.",
+      },
+      { status: 403 },
+    );
+  }
+
   // Repeated no-shows lose the online-booking privilege (walk-in/call only).
   const noShows = await prisma.appointment.count({
     where: {
@@ -62,6 +82,31 @@ export async function POST(request: NextRequest) {
       },
       { status: 403 },
     );
+  }
+
+  // Optional cap: at most N upcoming bookings per email so nobody hoards
+  // slots when the calendar is nearly full (0 = unlimited).
+  const settings = await getSettings();
+  if (settings.maxActiveBookingsPerEmail > 0) {
+    const upcoming = await prisma.appointment.count({
+      where: {
+        customerEmail: { equals: input.customerEmail, mode: "insensitive" },
+        status: { in: ACTIVE_STATUSES },
+        startTime: { gt: new Date() },
+      },
+    });
+    if (upcoming >= settings.maxActiveBookingsPerEmail) {
+      return Response.json(
+        {
+          error: `Mit dieser E-Mail-Adresse ${
+            settings.maxActiveBookingsPerEmail === 1
+              ? "ist bereits ein offener Termin"
+              : `sind bereits ${upcoming} offene Termine`
+          } gebucht (Maximum: ${settings.maxActiveBookingsPerEmail}). Bitte nimm den bestehenden Termin wahr oder sage ihn ab.`,
+        },
+        { status: 403 },
+      );
+    }
   }
 
   const start = new Date(input.start);

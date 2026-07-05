@@ -298,12 +298,20 @@ export default async function Home() {
           <div className="divider-fade my-10" />
 
           <div className="flex flex-col items-center gap-2 text-center text-xs text-muted">
-            <Link
-              href="/datenschutz"
-              className="underline underline-offset-4 transition-colors hover:text-foreground"
-            >
-              Datenschutzerklärung
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/meine-termine"
+                className="underline underline-offset-4 transition-colors hover:text-foreground"
+              >
+                Meine Termine
+              </Link>
+              <Link
+                href="/datenschutz"
+                className="underline underline-offset-4 transition-colors hover:text-foreground"
+              >
+                Datenschutzerklärung
+              </Link>
+            </div>
             <span>
               © {new Date().getFullYear()} {siteConfig.name}. Alle Rechte
               vorbehalten.
