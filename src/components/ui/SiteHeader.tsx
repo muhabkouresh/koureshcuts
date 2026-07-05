@@ -40,12 +40,31 @@ export default function SiteHeader() {
           </span>
         </ScrollLink>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5">
           <Link
             href="/meine-termine"
-            className="rounded-full border border-brand/40 bg-brand-soft px-4 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand hover:text-white"
+            aria-label="Meine Termine"
+            title="Meine Termine"
+            className="flex items-center justify-center rounded-full border border-brand/40 bg-brand-soft p-2 text-sm font-semibold text-brand transition-colors hover:bg-brand hover:text-white sm:px-4 sm:py-2"
           >
-            Meine Termine
+            {/* Compact calendar icon on phones — the text label would collide
+                with the shop name on narrow screens. */}
+            <svg
+              className="h-5 w-5 sm:hidden"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              aria-hidden
+            >
+              <rect x="3" y="4" width="18" height="17" rx="3" strokeWidth="2" />
+              <path
+                d="M3 9h18M8 2v4M16 2v4M9 15l2 2 4-4"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="hidden sm:inline">Meine Termine</span>
           </Link>
           <ScrollLink
             targetId="book"
