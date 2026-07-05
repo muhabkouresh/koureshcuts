@@ -40,10 +40,10 @@ export default function SiteHeader() {
           </span>
         </ScrollLink>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2.5">
           <Link
             href="/meine-termine"
-            className="text-sm font-medium text-muted transition-colors hover:text-foreground"
+            className="rounded-full border border-brand/40 bg-brand-soft px-4 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand hover:text-white"
           >
             Meine Termine
           </Link>
