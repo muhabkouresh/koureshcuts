@@ -39,11 +39,13 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { date, minutes, note } = parsed.data;
+  const { date, minutes, customerName, customerEmail, note } = parsed.data;
   const created = await prisma.delayLog.create({
     data: {
       date: zonedToUtc(date, 0, siteConfig.timezone),
       minutes,
+      customerName,
+      customerEmail: (customerEmail ?? "").toLowerCase(),
       note: note ?? "",
     },
   });

@@ -55,19 +55,5 @@ export async function POST(request: Request) {
     }
   }
 
-  // Every broadcast lands in the delay journal (Verspätungen tab).
-  try {
-    await prisma.delayLog.create({
-      data: {
-        date: zonedToUtc(todayInTz(tz), 0, tz),
-        minutes,
-        note: "Kunden informiert",
-        notified: sent,
-      },
-    });
-  } catch (err) {
-    console.error("delay log failed", err);
-  }
-
   return Response.json({ ok: true, considered: remaining.length, sent });
 }

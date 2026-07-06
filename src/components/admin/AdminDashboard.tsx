@@ -16,7 +16,6 @@ import {
   formatDateTimeLabel,
   longDateFromStr,
   minutesToHHMM,
-  monthLabel,
   nowMs,
   todayInTz,
   weekdayOf,
@@ -1027,20 +1026,28 @@ type DelayEntry = {
   id: string;
   date: string;
   minutes: number;
+  customerName: string;
+  customerEmail: string;
   note: string;
-  notified: number;
 };
 
-// Delay journal: log delays (manually or via the broadcast) and see them
-// summed per week, month, and over the last 12 months.
+// Per-customer delay minute accounts: assign minutes to a customer whenever
+// they show up late; the tab sums them per customer (and week/month overall).
 function VerspaetungenTab() {
   const [entries, setEntries] = useState<DelayEntry[]>([]);
+  const [customers, setCustomers] = useState<CustomerStat[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  // Assignment form.
+  const [custQuery, setCustQuery] = useState("");
+  const [custName, setCustName] = useState("");
+  const [custEmail, setCustEmail] = useState("");
   const [date, setDate] = useState(() => todayInTz(tz));
-  const [minutes, setMinutes] = useState(15);
+  const [minutes, setMinutes] = useState(10);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
   function load() {
     fetch("/api/admin/delays")
@@ -1051,46 +1058,87 @@ function VerspaetungenTab() {
   }
   useEffect(() => {
     load();
+    fetch("/api/admin/customers")
+      .then((r) => r.json())
+      .then((d) => setCustomers(d.customers ?? []))
+      .catch(() => {});
   }, []);
 
-  // Sums over the shop-timezone calendar (week starts Monday).
+  // Overall sums over the shop-timezone calendar (week starts Monday).
   const today = todayInTz(tz);
   const monday = addDaysToDateStr(today, -((weekdayOf(today) + 6) % 7));
   const nextMonday = addDaysToDateStr(monday, 7);
   const monthKey = today.slice(0, 7);
-
   let weekSum = 0;
   let monthSum = 0;
   let totalSum = 0;
-  const byMonth = new Map<string, number>();
   for (const e of entries) {
     const ds = dateKey(new Date(e.date), tz);
     totalSum += e.minutes;
     if (ds >= monday && ds < nextMonday) weekSum += e.minutes;
     if (ds.startsWith(monthKey)) monthSum += e.minutes;
-    const mk = ds.slice(0, 7);
-    byMonth.set(mk, (byMonth.get(mk) ?? 0) + e.minutes);
   }
-  const monthRows = [...byMonth.entries()]
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .slice(0, 6);
+
+  // Minute accounts: group by lowercase email, falling back to the name for
+  // walk-ins without one. The most recent entry provides the display name.
+  const accounts = new Map<
+    string,
+    { name: string; email: string; total: number; items: DelayEntry[] }
+  >();
+  for (const e of entries) {
+    const key = (e.customerEmail || e.customerName).toLowerCase();
+    if (!key) continue;
+    const acc = accounts.get(key) ?? {
+      name: e.customerName,
+      email: e.customerEmail,
+      total: 0,
+      items: [],
+    };
+    acc.total += e.minutes;
+    acc.items.push(e);
+    if (!acc.name && e.customerName) acc.name = e.customerName;
+    accounts.set(key, acc);
+  }
+  const accountRows = [...accounts.entries()].sort(
+    (a, b) => b[1].total - a[1].total,
+  );
+
+  const q = custQuery.toLowerCase().trim();
+  const suggestions = q
+    ? customers
+        .filter(
+          (c) =>
+            c.name.toLowerCase().includes(q) ||
+            c.email.toLowerCase().includes(q),
+        )
+        .slice(0, 5)
+    : [];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setMsg(null);
     try {
       const res = await fetch("/api/admin/delays", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, minutes, note }),
+        body: JSON.stringify({
+          date,
+          minutes,
+          customerName: custName,
+          customerEmail: custEmail,
+          note,
+        }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(d.error ?? "Konnte nicht gespeichert werden.");
         return;
       }
+      setMsg(`${minutes} Min. für ${custName} eingetragen.`);
       setNote("");
+      setCustQuery("");
       load();
     } finally {
       setSaving(false);
@@ -1138,13 +1186,68 @@ function VerspaetungenTab() {
       </div>
 
       <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
-        <h2 className="text-sm font-semibold">Verspätung eintragen</h2>
+        <h2 className="text-sm font-semibold">Verspätung einem Kunden zuteilen</h2>
         <p className="mt-1 text-xs text-muted">
-          Nur fürs Protokoll — Kunden werden hierbei nicht benachrichtigt.
-          (Der „Kunden informieren“-Knopf im Termine-Tab trägt hier automatisch
-          mit ein.)
+          Die Minuten landen auf dem Minutenkonto des Kunden. Der Kunde wird
+          dabei nicht benachrichtigt.
         </p>
         <form onSubmit={submit} className="mt-3 grid gap-3">
+          <div className="relative">
+            <input
+              type="text"
+              value={custQuery}
+              onChange={(e) => setCustQuery(e.target.value)}
+              placeholder="Kunde suchen (Name oder E-Mail)…"
+              className="w-full rounded-full border border-line bg-surface px-4 py-2.5 text-sm outline-none focus:border-brand"
+            />
+            {suggestions.length > 0 && (
+              <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-xl border border-line bg-background shadow-soft">
+                {suggestions.map((c) => (
+                  <li key={`${c.name}|${c.email}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustName(c.name);
+                        setCustEmail(c.email);
+                        setCustQuery("");
+                      }}
+                      className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm hover:bg-surface"
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      <span className="truncate text-xs text-muted">
+                        {c.email}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-sm">
+              <span className="text-muted">Kundenname *</span>
+              <input
+                type="text"
+                required
+                value={custName}
+                onChange={(e) => setCustName(e.target.value)}
+                maxLength={120}
+                placeholder="Max Mustermann"
+                className="rounded-lg border border-line bg-background px-3 py-2"
+              />
+            </label>
+            <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-sm">
+              <span className="text-muted">E-Mail (optional)</span>
+              <input
+                type="email"
+                value={custEmail}
+                onChange={(e) => setCustEmail(e.target.value)}
+                maxLength={200}
+                placeholder="max@beispiel.de"
+                className="rounded-lg border border-line bg-background px-3 py-2"
+              />
+            </label>
+          </div>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Datum</span>
@@ -1170,82 +1273,99 @@ function VerspaetungenTab() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 maxLength={200}
-                placeholder="z. B. Kunde kam zu spät"
+                placeholder="z. B. 10 Min. zu spät zum Termin"
                 className="rounded-lg border border-line bg-background px-3 py-2"
               />
             </label>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {msg && <p className="text-sm text-emerald-700">{msg}</p>}
           <div>
             <button
               type="submit"
               disabled={saving}
               className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50"
             >
-              {saving ? "Speichern…" : "Eintragen"}
+              {saving ? "Speichern…" : "Minuten zuteilen"}
             </button>
           </div>
         </form>
       </section>
 
-      {monthRows.length > 0 && (
-        <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
-          <h2 className="text-sm font-semibold">Summiert pro Monat</h2>
-          <ul className="mt-3 flex flex-col gap-1.5 text-sm">
-            {monthRows.map(([mk, sum]) => {
-              const [y, m] = mk.split("-").map(Number);
-              return (
-                <li
-                  key={mk}
-                  className="flex items-center justify-between rounded-lg bg-surface px-3 py-2"
-                >
-                  <span>{monthLabel(y, m - 1)}</span>
-                  <span className="font-semibold">{sum} Min.</span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
       <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
-        <h2 className="text-sm font-semibold">Alle Einträge</h2>
+        <h2 className="text-sm font-semibold">Minutenkonten</h2>
+        <p className="mt-1 text-xs text-muted">
+          Gesammelte Verspätungsminuten pro Kunde — höchste zuerst. Antippen
+          für die einzelnen Einträge.
+        </p>
         {loading ? (
           <p className="mt-3 text-sm text-muted">Lädt…</p>
-        ) : entries.length === 0 ? (
+        ) : accountRows.length === 0 ? (
           <p className="mt-3 rounded-lg bg-surface px-3 py-3 text-sm text-muted">
-            Noch keine Verspätungen protokolliert.
+            Noch keine Verspätungen zugeteilt.
           </p>
         ) : (
           <ul className="mt-3 flex flex-col gap-2">
-            {entries.map((e) => (
-              <li
-                key={e.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-sm"
-              >
-                <span className="min-w-0">
-                  <span className="font-medium">
-                    {formatDateLabel(new Date(e.date), tz)}
-                  </span>
-                  <span className="ml-2 font-semibold text-amber-700">
-                    +{e.minutes} Min.
-                  </span>
-                  {e.note && <span className="text-muted"> · {e.note}</span>}
-                  {e.notified > 0 && (
-                    <span className="text-muted">
-                      {" "}
-                      · {e.notified} Kunde(n) benachrichtigt
-                    </span>
-                  )}
-                </span>
-                <button
-                  onClick={() => remove(e.id)}
-                  className="shrink-0 text-xs text-muted underline underline-offset-4 hover:text-red-600"
+            {accountRows.map(([key, acc]) => {
+              const isOpen = expanded === key;
+              return (
+                <li
+                  key={key}
+                  className="overflow-hidden rounded-xl border border-line bg-surface"
                 >
-                  Löschen
-                </button>
-              </li>
-            ))}
+                  <button
+                    onClick={() => setExpanded(isOpen ? null : key)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-background"
+                  >
+                    <span className="min-w-0">
+                      <span className="block font-semibold">
+                        {acc.name || acc.email}
+                      </span>
+                      {acc.email && acc.name && (
+                        <span className="block truncate text-xs text-muted">
+                          {acc.email}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block font-bold text-amber-700">
+                        {acc.total} Min.
+                      </span>
+                      <span className="block text-xs text-muted">
+                        {acc.items.length} Eintrag
+                        {acc.items.length === 1 ? "" : "e"}
+                      </span>
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <ul className="border-t border-line bg-background px-4 py-2">
+                      {acc.items.map((e) => (
+                        <li
+                          key={e.id}
+                          className="flex items-center justify-between gap-3 border-b border-line py-2 text-sm last:border-0"
+                        >
+                          <span className="min-w-0">
+                            {formatDateLabel(new Date(e.date), tz)}
+                            <span className="ml-2 font-semibold text-amber-700">
+                              +{e.minutes} Min.
+                            </span>
+                            {e.note && (
+                              <span className="text-muted"> · {e.note}</span>
+                            )}
+                          </span>
+                          <button
+                            onClick={() => remove(e.id)}
+                            className="shrink-0 text-xs text-muted underline underline-offset-4 hover:text-red-600"
+                          >
+                            Löschen
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -1267,6 +1387,10 @@ function AgendaCard({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [notifyCustomer, setNotifyCustomer] = useState(true);
   const [cancelReason, setCancelReason] = useState("");
+  // Quick "customer was late" entry onto their minute account.
+  const [delayOpen, setDelayOpen] = useState(false);
+  const [delayMinutes, setDelayMinutes] = useState(10);
+  const [delayMsg, setDelayMsg] = useState<string | null>(null);
   const cancelled = a.status === "CANCELLED";
   const noShow = a.status === "NO_SHOW";
   const isPast = new Date(a.start).getTime() < nowMs();
@@ -1409,7 +1533,68 @@ function AgendaCard({
             >
               Apple Kalender
             </a>
+            {!cancelled && (
+              <button
+                onClick={() => setDelayOpen((o) => !o)}
+                className="rounded-lg border border-line px-3 py-1.5 hover:border-amber-400 hover:text-amber-700"
+              >
+                Verspätung
+              </button>
+            )}
           </div>
+
+          {delayOpen && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+              <p className="text-xs font-semibold text-amber-900">
+                Verspätung von {a.customerName} notieren (Minutenkonto)
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={600}
+                  value={delayMinutes}
+                  onChange={(e) => setDelayMinutes(Number(e.target.value))}
+                  className="w-20 rounded-lg border border-amber-300 bg-background px-2 py-1.5 text-xs"
+                />
+                <span className="text-xs text-amber-900">Minuten</span>
+                <button
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    setDelayMsg(null);
+                    try {
+                      const res = await fetch("/api/admin/delays", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          date: dateKey(new Date(a.start), tz),
+                          minutes: delayMinutes,
+                          customerName: a.customerName,
+                          customerEmail: a.customerEmail,
+                          note: `Termin ${formatClock(new Date(a.start), tz)} Uhr`,
+                        }),
+                      });
+                      const d = await res.json().catch(() => ({}));
+                      setDelayMsg(
+                        res.ok
+                          ? `+${delayMinutes} Min. eingetragen.`
+                          : (d.error ?? "Fehler."),
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {busy ? "…" : "Eintragen"}
+                </button>
+                {delayMsg && (
+                  <span className="text-xs text-amber-900">{delayMsg}</span>
+                )}
+              </div>
+            </div>
+          )}
 
           {cancelOpen && (
             <div className="mt-3 rounded-xl border border-red-200 bg-red-50/60 p-3">

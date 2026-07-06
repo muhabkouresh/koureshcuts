@@ -104,18 +104,22 @@ model Appointment {
   @@index([status])
 }
 
-/// A logged delay ("running late") entry. Created manually in the admin or
-/// automatically when the delay broadcast is sent. `date` is the start-of-day
-/// UTC instant for the shop timezone; `notified` counts emailed customers.
+/// Delay minutes assigned to a customer ("Minutenkonto"): every time a
+/// customer shows up late the admin logs the minutes; the Verspätungen tab
+/// sums them per customer. `date` is the start-of-day UTC instant for the
+/// shop timezone. Customers are keyed by lowercase email (name as fallback).
 model DelayLog {
-  id        String   @id @default(cuid())
-  date      DateTime
-  minutes   Int
-  note      String   @default("")
-  notified  Int      @default(0)
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  date          DateTime
+  minutes       Int
+  customerName  String   @default("")
+  customerEmail String   @default("")
+  note          String   @default("")
+  notified      Int      @default(0)
+  createdAt     DateTime @default(now())
 
   @@index([date])
+  @@index([customerEmail])
 }
 
 /// A manually blocked customer email (admin decision): no online booking.
