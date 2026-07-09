@@ -10,6 +10,7 @@ import SiteHeader from "@/components/ui/SiteHeader";
 import Reveal from "@/components/ui/Reveal";
 import ScrollLink from "@/components/ui/ScrollLink";
 import InstallPrompt from "@/components/ui/InstallPrompt";
+import QuickBook from "@/components/ui/QuickBook";
 
 // Serve the landing shell from cache and refresh it in the background every
 // 60s (ISR) instead of hitting Neon on every visit (force-dynamic). Services
@@ -161,14 +162,12 @@ export default async function Home() {
             </span>
           </div>
 
-          {nextSlot && (
-            <p className="animate-fade-up delay-3 mt-6 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50/90 px-4 py-2 text-sm font-medium text-emerald-800 backdrop-blur-sm">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-              Nächster freier Termin:{" "}
-              <strong>
-                {formatDateTimeLabel(new Date(nextSlot), siteConfig.timezone)}
-              </strong>
-            </p>
+          {nextSlot && services[0] && (
+            <QuickBook
+              serviceId={services[0].id}
+              start={nextSlot}
+              label={formatDateTimeLabel(new Date(nextSlot), siteConfig.timezone)}
+            />
           )}
         </div>
 

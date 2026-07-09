@@ -17,9 +17,6 @@ import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendAdminPush } from "@/lib/push";
 import { formatDateTimeLabel } from "@/lib/time";
 
-// Customers with this many no-shows can no longer book online.
-const NO_SHOW_BLOCK_THRESHOLD = 2;
-
 // POST /api/appointments — create a guest booking.
 export async function POST(request: NextRequest) {
   // Throttle booking bursts per IP: max 6 attempts per 10 minutes.
@@ -67,26 +64,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const settings = await getSettings();
+
   // Repeated no-shows lose the online-booking privilege (walk-in/call only).
-  const noShows = await prisma.appointment.count({
-    where: {
-      customerEmail: { equals: input.customerEmail, mode: "insensitive" },
-      status: AppointmentStatus.NO_SHOW,
-    },
-  });
-  if (noShows >= NO_SHOW_BLOCK_THRESHOLD) {
-    return Response.json(
-      {
-        error:
-          "Online-Buchung ist für diese E-Mail-Adresse leider nicht mehr möglich, da mehrere Termine nicht wahrgenommen wurden. Bitte melde dich direkt bei uns im Shop.",
+  // The threshold is an admin setting; 0 disables the automatic block.
+  if (settings.noShowBlockThreshold > 0) {
+    const noShows = await prisma.appointment.count({
+      where: {
+        customerEmail: { equals: input.customerEmail, mode: "insensitive" },
+        status: AppointmentStatus.NO_SHOW,
       },
-      { status: 403 },
-    );
+    });
+    if (noShows >= settings.noShowBlockThreshold) {
+      return Response.json(
+        {
+          error:
+            "Online-Buchung ist für diese E-Mail-Adresse leider nicht mehr möglich, da mehrere Termine nicht wahrgenommen wurden. Bitte melde dich direkt bei uns im Shop.",
+        },
+        { status: 403 },
+      );
+    }
   }
 
   // Optional cap: at most N upcoming bookings per email so nobody hoards
   // slots when the calendar is nearly full (0 = unlimited).
-  const settings = await getSettings();
   if (settings.maxActiveBookingsPerEmail > 0) {
     const upcoming = await prisma.appointment.count({
       where: {

@@ -11,6 +11,7 @@ export type SettingsPatch = {
   reminderLeadHours?: number;
   cancelDeadlineHours?: number;
   maxActiveBookingsPerEmail?: number;
+  noShowBlockThreshold?: number;
 };
 
 export async function getSettings() {

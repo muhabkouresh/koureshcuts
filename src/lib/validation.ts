@@ -156,6 +156,8 @@ export const settingsSchema = z
     cancelDeadlineHours: z.number().int().min(0).max(168).optional(),
     // Max simultaneous upcoming bookings per email (0 = unlimited).
     maxActiveBookingsPerEmail: z.number().int().min(0).max(10).optional(),
+    // No-shows after which online booking is blocked (0 = never).
+    noShowBlockThreshold: z.number().int().min(0).max(10).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: "Keine Änderungen übergeben.",

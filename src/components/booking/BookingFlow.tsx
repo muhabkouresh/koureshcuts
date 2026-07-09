@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { siteConfig } from "@/config/site";
 import { priceShort, priceFull } from "@/lib/format";
 import {
@@ -104,6 +104,29 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BookingResult | null>(null);
+  // Slot start requested by the hero quick-book teaser — selected as soon as
+  // the day's slots arrive (and silently dropped if it was just taken).
+  const pendingStartRef = useRef<string | null>(null);
+
+  // Hero teaser hand-off: jump straight to the requested service + day.
+  useEffect(() => {
+    const onQuickBook = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as {
+        serviceId?: string;
+        start?: string;
+      } | null;
+      if (!detail?.serviceId || !detail.start) return;
+      const s = services.find((x) => x.id === detail.serviceId);
+      if (!s) return;
+      pendingStartRef.current = detail.start;
+      setService(s);
+      setSlot(null);
+      setDate(dateKey(new Date(detail.start), tz));
+      setStep("datetime");
+    };
+    window.addEventListener("kc:quickbook", onQuickBook);
+    return () => window.removeEventListener("kc:quickbook", onQuickBook);
+  }, [services]);
 
   // Returning customers: prefill name/email remembered from the last booking
   // on this device (localStorage only — nothing leaves the browser).
@@ -146,7 +169,20 @@ export default function BookingFlow({ services }: { services: Service[] }) {
     })
       .then((r) => r.json())
       .then((data) => {
-        if (!cancelled) setSlots(data.slots ?? []);
+        if (cancelled) return;
+        const loaded: Slot[] = data.slots ?? [];
+        setSlots(loaded);
+        // Quick-book hand-off: pre-select the teased time and go straight to
+        // the details form. If someone just grabbed it, stay on the times.
+        const pending = pendingStartRef.current;
+        if (pending) {
+          pendingStartRef.current = null;
+          const match = loaded.find((s) => s.start === pending);
+          if (match) {
+            setSlot(match);
+            setStep("details");
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setSlots([]);

@@ -57,6 +57,8 @@ model Settings {
   cancelDeadlineHours Int    @default(0)
   /// Max simultaneous upcoming bookings per customer email (0 = unlimited).
   maxActiveBookingsPerEmail Int @default(0)
+  /// No-shows after which an email loses online booking (0 = never block).
+  noShowBlockThreshold Int @default(2)
   updatedAt         DateTime @updatedAt
 }
 

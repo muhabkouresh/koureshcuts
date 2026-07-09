@@ -83,6 +83,7 @@ type Data = {
   reminderLeadHours: number;
   cancelDeadlineHours: number;
   maxActiveBookingsPerEmail: number;
+  noShowBlockThreshold: number;
   revenue: RevenueStats;
   services: Service[];
   appointments: Appointment[];
@@ -217,7 +218,11 @@ export default function AdminDashboard({
         />
       )}
       {tab === "kunden" && (
-        <KundenTab services={data.services} onChange={() => router.refresh()} />
+        <KundenTab
+          services={data.services}
+          noShowThreshold={data.noShowBlockThreshold}
+          onChange={() => router.refresh()}
+        />
       )}
       {tab === "umsatz" && <UmsatzTab revenue={data.revenue} />}
       {tab === "services" && <ServicesTab onChange={() => router.refresh()} />}
@@ -231,6 +236,7 @@ export default function AdminDashboard({
           reminderLeadHours={data.reminderLeadHours}
           cancelDeadlineHours={data.cancelDeadlineHours}
           maxActiveBookingsPerEmail={data.maxActiveBookingsPerEmail}
+          noShowBlockThreshold={data.noShowBlockThreshold}
           onChange={() => router.refresh()}
         />
       )}
@@ -2129,9 +2135,11 @@ type CustomerStat = {
 
 function KundenTab({
   services,
+  noShowThreshold,
   onChange,
 }: {
   services: Service[];
+  noShowThreshold: number;
   onChange: () => void;
 }) {
   const [customers, setCustomers] = useState<CustomerStat[]>([]);
@@ -2297,11 +2305,18 @@ function KundenTab({
                       <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
                         {c.completed} wahrgenommen
                       </span>
-                      {c.noShows > 0 && (
-                        <span className="rounded-full bg-orange-50 px-2.5 py-1 font-medium text-orange-700">
-                          {c.noShows} nicht erschienen
-                        </span>
-                      )}
+                      {c.noShows > 0 &&
+                        (noShowThreshold > 0 && c.noShows >= noShowThreshold ? (
+                          <span className="rounded-full bg-red-50 px-2.5 py-1 font-medium text-red-700">
+                            {c.noShows} No-Shows — automatisch gesperrt
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-orange-50 px-2.5 py-1 font-medium text-orange-700">
+                            {noShowThreshold > 0
+                              ? `${c.noShows} von ${noShowThreshold} No-Shows bis zur Sperre`
+                              : `${c.noShows} nicht erschienen`}
+                          </span>
+                        ))}
                       <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
                         {priceFull(c.spentCents)} ausgegeben
                       </span>
@@ -2642,6 +2657,7 @@ function Availability({
   reminderLeadHours,
   cancelDeadlineHours,
   maxActiveBookingsPerEmail,
+  noShowBlockThreshold,
   onChange,
 }: {
   hours: DayHours[];
@@ -2652,12 +2668,14 @@ function Availability({
   reminderLeadHours: number;
   cancelDeadlineHours: number;
   maxActiveBookingsPerEmail: number;
+  noShowBlockThreshold: number;
   onChange: () => void;
 }) {
   return (
     <div className="mt-6 flex flex-col gap-8">
       <BookingWindowCard days={bookingWindowDays} onChange={onChange} />
       <BookingLimitCard max={maxActiveBookingsPerEmail} onChange={onChange} />
+      <NoShowCard threshold={noShowBlockThreshold} onChange={onChange} />
       <CancelDeadlineCard hours={cancelDeadlineHours} onChange={onChange} />
       <RemindersCard
         enabled={reminderEnabled}
@@ -2778,6 +2796,75 @@ function BookingLimitCard({
         <select
           value={max}
           onChange={(e) => setMax(Number(e.target.value))}
+          className="rounded-lg border border-line bg-background px-3 py-2"
+        >
+          {OPTIONS.map((o) => (
+            <option key={o.v} value={o.v}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+        >
+          {saving ? "Speichern…" : "Speichern"}
+        </button>
+        {msg && <span className="text-sm text-muted">{msg}</span>}
+      </div>
+    </section>
+  );
+}
+
+// After how many no-shows an email loses online booking (0 = never).
+function NoShowCard({
+  threshold: initialThreshold,
+  onChange,
+}: {
+  threshold: number;
+  onChange: () => void;
+}) {
+  const [threshold, setThreshold] = useState(initialThreshold);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const OPTIONS = [
+    { v: 0, label: "Nie automatisch sperren" },
+    { v: 1, label: "Nach 1 No-Show" },
+    { v: 2, label: "Nach 2 No-Shows" },
+    { v: 3, label: "Nach 3 No-Shows" },
+  ];
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noShowBlockThreshold: threshold }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setMsg(res.ok ? "Gespeichert." : (d.error ?? "Fehler."));
+      if (res.ok) onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">No-Show-Sperre</h2>
+      <p className="mt-1 text-xs text-muted">
+        Ab wie vielen „nicht erschienen“-Terminen eine E-Mail-Adresse
+        automatisch keine Online-Buchung mehr machen darf. Manuell sperren
+        kannst du im Kunden-Tab jederzeit zusätzlich.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        <select
+          value={threshold}
+          onChange={(e) => setThreshold(Number(e.target.value))}
           className="rounded-lg border border-line bg-background px-3 py-2"
         >
           {OPTIONS.map((o) => (

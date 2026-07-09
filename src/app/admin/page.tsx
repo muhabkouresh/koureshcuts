@@ -71,6 +71,7 @@ export default async function AdminPage() {
     reminderLeadHours: settings.reminderLeadHours,
     cancelDeadlineHours: settings.cancelDeadlineHours,
     maxActiveBookingsPerEmail: settings.maxActiveBookingsPerEmail,
+    noShowBlockThreshold: settings.noShowBlockThreshold,
     revenue,
     services,
     appointments: appointments.map((a) => ({
