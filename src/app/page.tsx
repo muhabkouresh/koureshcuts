@@ -9,6 +9,7 @@ import BookingFlow, { type Service } from "@/components/booking/BookingFlow";
 import SiteHeader from "@/components/ui/SiteHeader";
 import Reveal from "@/components/ui/Reveal";
 import ScrollLink from "@/components/ui/ScrollLink";
+import InstallPrompt from "@/components/ui/InstallPrompt";
 
 // Serve the landing shell from cache and refresh it in the background every
 // 60s (ISR) instead of hitting Neon on every visit (force-dynamic). Services
@@ -258,6 +259,8 @@ export default async function Home() {
           )}
         </section>
       </main>
+
+      <InstallPrompt />
 
       {/* Footer */}
       <footer className="border-t border-line bg-background">
