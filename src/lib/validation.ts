@@ -21,10 +21,16 @@ export const rescheduleAppointmentSchema = z.object({
   start: z.string().datetime({ message: "Ungültige Startzeit." }),
 });
 
-// Joining the waitlist for a fully-booked day (public booking flow).
+// Joining the waitlist (public booking flow). With `date` = waiting for that
+// specific fully-booked day; without = flexible ("next free slot"), optionally
+// restricted to preferred weekdays (0=Sunday…6=Saturday).
 export const joinWaitlistSchema = z.object({
   serviceId: z.string().min(1, "Service ist erforderlich."),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ungültiges Datum."),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Ungültiges Datum.")
+    .optional(),
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
   customerName: z.string().trim().min(1, "Name ist erforderlich.").max(120),
   customerEmail: z.string().trim().email("Gültige E-Mail eingeben."),
 });
@@ -101,6 +107,9 @@ export const specialDaySchema = z
     openMinute: z.number().int().min(0).max(1440),
     closeMinute: z.number().int().min(0).max(1440),
     isPublic: z.boolean().optional().default(true),
+    // Hours of waitlist head start: the day's slots are first offered to the
+    // queue and only become publicly bookable after this lead time (0 = off).
+    waitlistLeadHours: z.number().int().min(0).max(168).optional().default(0),
     note: z.string().trim().max(200).optional().default(""),
   })
   .refine((v) => v.closeMinute > v.openMinute, {

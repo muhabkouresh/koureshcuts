@@ -16,6 +16,7 @@ import { googleCalendarUrl } from "@/lib/calendar";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendAdminPush } from "@/lib/push";
 import { formatDateTimeLabel } from "@/lib/time";
+import { expireStaleOffers } from "@/lib/queue";
 
 // POST /api/appointments — create a guest booking.
 export async function POST(request: NextRequest) {
@@ -48,6 +49,9 @@ export async function POST(request: NextRequest) {
   if (!service || !service.active) {
     return Response.json({ error: "Service nicht gefunden." }, { status: 400 });
   }
+
+  // Opportunistic queue upkeep: release expired slot holds so they cascade.
+  await expireStaleOffers();
 
   // Manually blocked by the shop owner (admin blocklist).
   const manuallyBlocked = await prisma.blockedCustomer.findUnique({
@@ -152,6 +156,19 @@ export async function POST(request: NextRequest) {
               select: { id: true },
             });
             if (clash) {
+              throw new Error("SLOT_TAKEN");
+            }
+            // A live waitlist hold on this slot also blocks it.
+            const held = await tx.slotOffer.findFirst({
+              where: {
+                status: "PENDING",
+                expiresAt: { gt: new Date() },
+                startTime: { lt: end },
+                endTime: { gt: start },
+              },
+              select: { id: true },
+            });
+            if (held) {
               throw new Error("SLOT_TAKEN");
             }
             return tx.appointment.create({

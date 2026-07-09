@@ -408,6 +408,12 @@ export default function BookingFlow({ services }: { services: Service[] }) {
           >
             Weiter
           </button>
+
+          <GeneralWaitlistBox
+            serviceId={service.id}
+            defaultName={name}
+            defaultEmail={email}
+          />
         </div>
       )}
 
@@ -786,6 +792,7 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [position, setPosition] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function join(e: React.FormEvent) {
@@ -808,6 +815,7 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
         setError(data.error ?? "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
         return;
       }
+      if (typeof data.position === "number") setPosition(data.position);
       setDone(true);
     } catch {
       setError("Netzwerkfehler. Bitte erneut versuchen.");
@@ -819,8 +827,9 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
   if (done) {
     return (
       <div className="mt-4 animate-fade-up rounded-xl bg-brand-soft px-4 py-4 text-center text-sm font-medium text-brand-700">
-        ✓ Du stehst auf der Warteliste. Wir melden uns per E-Mail, sobald an
-        diesem Tag ein Platz frei wird.
+        ✓ Du stehst auf der Warteliste
+        {position !== null ? ` (Platz ${position})` : ""}. Wird an diesem Tag
+        ein Platz frei, bekommst du ihn per E-Mail exklusiv angeboten.
       </div>
     );
   }
@@ -843,6 +852,158 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
       ) : (
         <form onSubmit={join} className="flex animate-fade-up flex-col gap-3">
           <p className="text-sm font-semibold">Warteliste für diesen Tag</p>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="E-Mail"
+            autoComplete="email"
+            className="w-full rounded-xl bg-background px-4 py-3 text-sm outline-none ring-1 ring-line focus:ring-brand"
+          />
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name"
+            autoComplete="name"
+            className="w-full rounded-xl bg-background px-4 py-3 text-sm outline-none ring-1 ring-line focus:ring-brand"
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-full bg-brand py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+          >
+            {submitting ? "Wird eingetragen…" : "Eintragen"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+// Flexible waitlist: "next free slot, any day" — with optional preferred
+// weekdays. Shown under the calendar so fully-booked visitors aren't lost.
+function GeneralWaitlistBox({
+  serviceId,
+  defaultName,
+  defaultEmail,
+}: {
+  serviceId: string;
+  defaultName: string;
+  defaultEmail: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(defaultName);
+  const [email, setEmail] = useState(defaultEmail);
+  const [days, setDays] = useState<Set<number>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [position, setPosition] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const WEEKDAY_OPTIONS: [number, string][] = [
+    [1, "Mo"],
+    [2, "Di"],
+    [3, "Mi"],
+    [4, "Do"],
+    [5, "Fr"],
+    [6, "Sa"],
+    [0, "So"],
+  ];
+
+  function toggleDay(d: number) {
+    setDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d);
+      else next.add(d);
+      return next;
+    });
+  }
+
+  async function join(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId,
+          weekdays: [...days],
+          customerName: name,
+          customerEmail: email,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
+        return;
+      }
+      if (typeof data.position === "number") setPosition(data.position);
+      setDone(true);
+    } catch {
+      setError("Netzwerkfehler. Bitte erneut versuchen.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div className="mt-4 animate-fade-up rounded-xl bg-brand-soft px-4 py-4 text-center text-sm font-medium text-brand-700">
+        ✓ Du stehst auf der Warteliste
+        {position !== null ? ` (Platz ${position})` : ""}. Sobald ein
+        passender Termin frei wird, bekommst du ihn per E-Mail exklusiv
+        angeboten — er ist dann eine Zeit lang nur für dich reserviert.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-surface p-4">
+      {!open ? (
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted">
+            Kein passender Termin dabei? Sichere dir den nächsten freien Platz.
+          </p>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="shrink-0 rounded-full bg-background px-5 py-2 text-sm font-semibold shadow-sm ring-1 ring-line transition-colors hover:ring-brand"
+          >
+            Auf die Warteliste
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={join} className="flex animate-fade-up flex-col gap-3">
+          <p className="text-sm font-semibold">
+            Warteliste — nächster freier Termin
+          </p>
+          <div>
+            <p className="text-xs text-muted">
+              Nur bestimmte Tage? (leer = jeder Tag passt)
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {WEEKDAY_OPTIONS.map(([d, label]) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => toggleDay(d)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition-colors ${
+                    days.has(d)
+                      ? "bg-brand text-white ring-brand"
+                      : "bg-background text-muted ring-line hover:ring-brand"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <input
             type="email"
             required

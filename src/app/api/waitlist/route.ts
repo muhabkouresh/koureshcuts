@@ -6,7 +6,9 @@ import { sendWaitlistJoinedEmails } from "@/lib/email";
 import { zonedToUtc } from "@/lib/time";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 
-// POST /api/waitlist — add the customer to the waitlist for a fully-booked day.
+// POST /api/waitlist — join the waitlist: either for one fully-booked day
+// (date set) or flexibly for the next free slot (optionally limited to
+// preferred weekdays). Returns the queue position.
 export async function POST(request: NextRequest) {
   const limit = rateLimit(`waitlist:${clientIp(request)}`, 6, 10 * 60_000);
   if (!limit.ok) {
@@ -37,28 +39,44 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Service nicht gefunden." }, { status: 400 });
   }
 
-  // Start-of-day UTC for the requested day in the shop timezone.
-  const date = zonedToUtc(input.date, 0, siteConfig.timezone);
+  // Start-of-day UTC for the requested day in the shop timezone; null = any.
+  const date = input.date
+    ? zonedToUtc(input.date, 0, siteConfig.timezone)
+    : null;
+  const weekdays = (input.weekdays ?? []).sort().join(",");
 
-  // Avoid duplicate entries for the same person/service/day.
+  // Avoid duplicate entries for the same person/service/day (or same person
+  // twice on the flexible queue).
   const existing = await prisma.waitlistEntry.findFirst({
     where: {
       serviceId: service.id,
       date,
-      customerEmail: input.customerEmail,
+      customerEmail: { equals: input.customerEmail, mode: "insensitive" },
     },
     select: { id: true },
   });
   if (existing) {
-    return Response.json({ ok: true, already: true });
+    const ahead = await prisma.waitlistEntry.count({
+      where: { createdAt: { lt: new Date() }, id: { not: existing.id } },
+    });
+    return Response.json({ ok: true, already: true, position: ahead + 1 });
   }
 
-  await prisma.waitlistEntry.create({
+  const created = await prisma.waitlistEntry.create({
     data: {
       serviceId: service.id,
       date,
+      weekdays,
       customerName: input.customerName,
       customerEmail: input.customerEmail,
+    },
+  });
+  const position = await prisma.waitlistEntry.count({
+    where: {
+      OR: [
+        { priority: { gt: 0 } },
+        { priority: 0, createdAt: { lte: created.createdAt } },
+      ],
     },
   });
 
@@ -73,5 +91,5 @@ export async function POST(request: NextRequest) {
     console.error("waitlist email failed", err);
   }
 
-  return Response.json({ ok: true }, { status: 201 });
+  return Response.json({ ok: true, position }, { status: 201 });
 }

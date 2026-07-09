@@ -2,10 +2,29 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
 import { verifyEmailToken, cancelToken } from "@/lib/token";
-import { formatDateTimeLabel, nowMs } from "@/lib/time";
+import { formatDateLabel, formatDateTimeLabel, nowMs } from "@/lib/time";
 import { priceFull } from "@/lib/format";
 import { ACTIVE_STATUSES } from "@/lib/constants";
 import RememberDevice from "./RememberDevice";
+import WaitlistSection from "./WaitlistSection";
+
+const WEEKDAY_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+// Human label of what a waitlist entry is waiting for.
+function wishLabel(entry: { date: Date | null; weekdays: string }): string {
+  if (entry.date) {
+    return `Wunschtag: ${formatDateLabel(entry.date, siteConfig.timezone)}`;
+  }
+  if (entry.weekdays) {
+    const names = entry.weekdays
+      .split(",")
+      .map((d) => WEEKDAY_SHORT[Number(d)] ?? "")
+      .filter(Boolean)
+      .join(", ");
+    return `Nächster freier Termin (${names})`;
+  }
+  return "Nächster freier Termin (jeder Tag)";
+}
 
 // Status → short German label + badge style for the history section.
 function historyBadge(status: string): { label: string; cls: string } {
@@ -51,6 +70,30 @@ export default async function MyAppointmentsListPage({
         include: { service: { select: { name: true, priceCents: true } } },
       })
     : [];
+
+  // Waitlist entries of this customer, each with its live queue position.
+  const waitlistEntries = valid
+    ? await prisma.waitlistEntry.findMany({
+        where: { customerEmail: { equals: email, mode: "insensitive" } },
+        include: { service: { select: { name: true } } },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+  const waitlistWithPosition = await Promise.all(
+    waitlistEntries.map(async (w) => ({
+      id: w.id,
+      serviceName: w.service.name,
+      wishLabel: wishLabel(w),
+      position: await prisma.waitlistEntry.count({
+        where: {
+          OR: [
+            { priority: { gt: w.priority } },
+            { priority: w.priority, createdAt: { lte: w.createdAt } },
+          ],
+        },
+      }),
+    })),
+  );
 
   // Booking history: the most recent past appointments (attended, cancelled,
   // no-show). Admin slot blocks are internal and never shown.
@@ -135,6 +178,12 @@ export default async function MyAppointmentsListPage({
                 ))}
               </ul>
             )}
+
+            <WaitlistSection
+              entries={waitlistWithPosition}
+              e={e ?? ""}
+              t={t ?? ""}
+            />
 
             {history.length > 0 && (
               <div className="mt-8">

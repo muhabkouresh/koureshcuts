@@ -70,10 +70,14 @@ type Customer = { name: string; email: string; phone: string };
 type WaitlistItem = {
   id: string;
   serviceName: string;
-  date: string;
+  date: string | null;
+  weekdays: string;
+  priority: number;
+  createdAt: string;
   customerName: string;
   customerEmail: string;
   notifiedAt: string | null;
+  pendingOffer: { start: string; until: string } | null;
 };
 
 type Data = {
@@ -307,6 +311,7 @@ function TermineTab({
   const waitlistByDay = useMemo(() => {
     const map = new Map<string, WaitlistItem[]>();
     for (const w of waitlist) {
+      if (!w.date) continue;
       const key = dateKey(new Date(w.date), tz);
       const list = map.get(key) ?? [];
       list.push(w);
@@ -440,6 +445,10 @@ function TermineTab({
       )}
 
       {stats.todayCount > 0 && <DelayCard />}
+
+      {waitlist.length > 0 && (
+        <QueueCard entries={waitlist} onChange={onChange} />
+      )}
 
       {/* Day header + week strip */}
       <div className="rounded-2xl border border-line bg-background shadow-soft">
@@ -965,6 +974,149 @@ function DaySlots({
         </div>
       )}
     </div>
+  );
+}
+
+const WEEKDAY_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+// What a waitlist entry is waiting for, as a short label.
+function queueWishLabel(w: WaitlistItem): string {
+  if (w.date) return formatDateLabel(new Date(w.date), tz);
+  if (w.weekdays) {
+    return (
+      "Nur " +
+      w.weekdays
+        .split(",")
+        .map((d) => WEEKDAY_SHORT[Number(d)] ?? "")
+        .filter(Boolean)
+        .join(", ")
+    );
+  }
+  return "Jeder Tag";
+}
+
+// The full waiting queue in fair order (priority first, then first come,
+// first served). Freed slots are offered automatically top-down; here the
+// owner can bump someone to the front or remove entries.
+function QueueCard({
+  entries,
+  onChange,
+}: {
+  entries: WaitlistItem[];
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const maxPriority = entries.reduce((m, w) => Math.max(m, w.priority), 0);
+
+  async function bump(id: string) {
+    setBusyId(id);
+    try {
+      await fetch(`/api/admin/waitlist/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: maxPriority + 1 }),
+      });
+      onChange();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(id: string) {
+    if (!window.confirm("Eintrag wirklich von der Warteliste entfernen?")) {
+      return;
+    }
+    setBusyId(id);
+    try {
+      await fetch(`/api/admin/waitlist/${id}`, { method: "DELETE" });
+      onChange();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand">
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M4 6h16M4 12h10M4 18h6" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </span>
+          <h3 className="text-sm font-bold">
+            Warteschlange <span className="text-muted">({entries.length})</span>
+          </h3>
+        </div>
+        <span className="text-sm text-muted">{open ? "▴" : "▾"}</span>
+      </button>
+      <p className="mt-1 text-xs text-muted">
+        Freie Slots werden automatisch der Reihe nach exklusiv angeboten —
+        Position 1 zuerst. „Vorziehen“ setzt jemanden an die Spitze.
+      </p>
+
+      {open && (
+        <ul className="mt-4 flex flex-col gap-2">
+          {entries.map((w, i) => (
+            <li
+              key={w.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface px-4 py-3"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand-700">
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">
+                    {w.customerName}
+                    <span className="ml-2 font-normal text-muted">
+                      {w.serviceName}
+                    </span>
+                    {w.priority > 0 && (
+                      <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                        vorgezogen
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted">
+                    {queueWishLabel(w)} · seit{" "}
+                    {formatDateLabel(new Date(w.createdAt), tz)}
+                    {w.pendingOffer && (
+                      <span className="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                        Angebot läuft: {formatClock(new Date(w.pendingOffer.start), tz)} Uhr, reserviert bis{" "}
+                        {formatClock(new Date(w.pendingOffer.until), tz)}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {i > 0 && w.priority === 0 && !w.pendingOffer && (
+                  <button
+                    disabled={busyId === w.id}
+                    onClick={() => bump(w.id)}
+                    className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-brand hover:text-brand disabled:opacity-50"
+                  >
+                    Vorziehen
+                  </button>
+                )}
+                <button
+                  disabled={busyId === w.id}
+                  onClick={() => remove(w.id)}
+                  className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-red-400 hover:text-red-600 disabled:opacity-50"
+                >
+                  Entfernen
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -3604,9 +3756,11 @@ function SpecialDaysCard({
   const [openTime, setOpenTime] = useState("10:00");
   const [closeTime, setCloseTime] = useState("18:00");
   const [isPublic, setIsPublic] = useState(true);
+  const [leadHours, setLeadHours] = useState(0);
   const [note, setNote] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function resetForm() {
@@ -3614,6 +3768,7 @@ function SpecialDaysCard({
     setOpenTime("10:00");
     setCloseTime("18:00");
     setIsPublic(true);
+    setLeadHours(0);
     setNote("");
     setEditingId(null);
     setError(null);
@@ -3641,6 +3796,7 @@ function SpecialDaysCard({
     }
     setSaving(true);
     setError(null);
+    setInfo(null);
     try {
       const url = editingId
         ? `/api/admin/special-days/${editingId}`
@@ -3653,6 +3809,7 @@ function SpecialDaysCard({
           openMinute: hhmmToMinutes(openTime),
           closeMinute: hhmmToMinutes(closeTime),
           isPublic,
+          waitlistLeadHours: editingId ? 0 : leadHours,
           note,
         }),
       });
@@ -3660,6 +3817,11 @@ function SpecialDaysCard({
       if (!res.ok) {
         setError(d.error ?? "Konnte nicht gespeichert werden.");
         return;
+      }
+      if (typeof d.offered === "number" && d.offered > 0) {
+        setInfo(
+          `Gespeichert — ${d.offered} Slot(s) exklusiv an die Warteliste angeboten.`,
+        );
       }
       resetForm();
       onChange();
@@ -3798,6 +3960,25 @@ function SpecialDaysCard({
             Nur für mich
           </button>
         </div>
+        {isPublic && !editingId && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted">
+              Warteliste-Vorsprung — Slots gehen erst exklusiv der Reihe nach
+              an die Warteliste, danach öffentlich:
+            </span>
+            <select
+              value={leadHours}
+              onChange={(e) => setLeadHours(Number(e.target.value))}
+              className="max-w-[16rem] rounded-lg border border-line bg-background px-3 py-2"
+            >
+              <option value={0}>Kein Vorsprung (sofort öffentlich)</option>
+              <option value={6}>6 Stunden Vorsprung</option>
+              <option value={12}>12 Stunden Vorsprung</option>
+              <option value={24}>24 Stunden Vorsprung</option>
+              <option value={48}>48 Stunden Vorsprung</option>
+            </select>
+          </label>
+        )}
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Notiz (optional)</span>
           <input
@@ -3809,6 +3990,7 @@ function SpecialDaysCard({
           />
         </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
+        {info && <p className="text-sm text-emerald-700">{info}</p>}
         <div className="flex items-center gap-3">
           <button
             type="submit"

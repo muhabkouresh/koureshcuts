@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { AppointmentStatus } from "@/lib/constants";
 import { verifyCancelToken } from "@/lib/token";
 import { sendCancellationNotice } from "@/lib/email";
-import { notifyWaitlistForDay } from "@/lib/waitlist";
+import { processFreedSlot } from "@/lib/queue";
 import { sendAdminPush } from "@/lib/push";
 import { siteConfig } from "@/config/site";
 import { formatDateTimeLabel } from "@/lib/time";
@@ -105,12 +105,8 @@ export async function POST(
     console.error("cancellation notice failed", err);
   }
 
-  // A spot opened up — auto-notify anyone waiting for this day.
-  try {
-    await notifyWaitlistForDay(appt.startTime);
-  } catch (err) {
-    console.error("waitlist auto-notify failed", err);
-  }
+  // A spot opened up — offer it exclusively to the next person in the queue.
+  await processFreedSlot(appt.startTime);
 
   // Push to the admin PWA (best-effort).
   try {

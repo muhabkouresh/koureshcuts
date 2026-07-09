@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ACTIVE_STATUSES } from "@/lib/constants";
 import { sendReminderEmail } from "@/lib/email";
 import { getSettings } from "@/lib/settings";
+import { expireStaleOffers } from "@/lib/queue";
 
 // GET /api/cron/reminders — invoked daily by Vercel Cron. Sends a reminder
 // email for every active appointment starting within the next 24 hours that
@@ -13,6 +14,9 @@ export async function GET(request: NextRequest) {
   if (!secret || auth !== `Bearer ${secret}`) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
   }
+
+  // Daily queue sweep: cascade any slot offers that expired without traffic.
+  await expireStaleOffers();
 
   const settings = await getSettings();
   if (!settings.reminderEnabled) {

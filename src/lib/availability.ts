@@ -129,7 +129,7 @@ export async function getAvailability(
   const dayStartUtc = zonedToUtc(dateStr, 0, tz);
   const dayEndUtc = zonedToUtc(dateStr, 24 * 60, tz);
 
-  const [hoursByDay, timeOffs, specialDays, appointments, settings] =
+  const [hoursByDay, timeOffs, specialDays, appointments, offers, settings] =
     await Promise.all([
       loadHoursMap(),
       prisma.timeOff.findMany({
@@ -137,7 +137,12 @@ export async function getAvailability(
         select: { startDate: true, endDate: true },
       }),
       prisma.specialDay.findMany({
-        where: { isPublic: true, date: { gte: dayStartUtc, lt: dayEndUtc } },
+        where: {
+          isPublic: true,
+          date: { gte: dayStartUtc, lt: dayEndUtc },
+          // Days with a waitlist head start stay hidden until publicFrom.
+          OR: [{ publicFrom: null }, { publicFrom: { lte: new Date() } }],
+        },
         select: { date: true, openMinute: true, closeMinute: true },
       }),
       prisma.appointment.findMany({
@@ -149,8 +154,19 @@ export async function getAvailability(
         },
         select: { startTime: true, endTime: true },
       }),
+      // Unexpired exclusive waitlist offers occupy their slot like a booking.
+      prisma.slotOffer.findMany({
+        where: {
+          status: "PENDING",
+          expiresAt: { gt: new Date() },
+          startTime: { lt: dayEndUtc },
+          endTime: { gt: dayStartUtc },
+        },
+        select: { startTime: true, endTime: true },
+      }),
       getSettings(),
     ]);
+  appointments.push(...offers);
 
   const slots = computeSlots(
     dateStr,
@@ -214,7 +230,7 @@ export async function getMonthAvailability(
   const total = daysInMonth(year, month0);
   const monthEndUtc = zonedToUtc(toDateStr(year, month0, total), 24 * 60, tz);
 
-  const [hoursByDay, timeOffs, specialDays, appointments, settings] =
+  const [hoursByDay, timeOffs, specialDays, appointments, offers, settings] =
     await Promise.all([
       loadHoursMap(),
       prisma.timeOff.findMany({
@@ -228,6 +244,7 @@ export async function getMonthAvailability(
         where: {
           isPublic: true,
           date: { gte: monthStartUtc, lt: monthEndUtc },
+          OR: [{ publicFrom: null }, { publicFrom: { lte: new Date() } }],
         },
         select: { date: true, openMinute: true, closeMinute: true },
       }),
@@ -239,8 +256,18 @@ export async function getMonthAvailability(
         },
         select: { startTime: true, endTime: true },
       }),
+      prisma.slotOffer.findMany({
+        where: {
+          status: "PENDING",
+          expiresAt: { gt: new Date() },
+          startTime: { lt: monthEndUtc },
+          endTime: { gt: monthStartUtc },
+        },
+        select: { startTime: true, endTime: true },
+      }),
       getSettings(),
     ]);
+  appointments.push(...offers);
 
   const now = new Date();
   const days: number[] = [];
