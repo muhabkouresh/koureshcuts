@@ -86,9 +86,15 @@ export default async function MyAppointmentsListPage({
       wishLabel: wishLabel(w),
       position: await prisma.waitlistEntry.count({
         where: {
-          OR: [
-            { priority: { gt: w.priority } },
-            { priority: w.priority, createdAt: { lte: w.createdAt } },
+          AND: [
+            // Stale entries for past days don't count toward the position.
+            { OR: [{ date: null }, { date: { gte: new Date(nowMs() - 24 * 60 * 60_000) } }] },
+            {
+              OR: [
+                { priority: { gt: w.priority } },
+                { priority: w.priority, createdAt: { lte: w.createdAt } },
+              ],
+            },
           ],
         },
       }),
