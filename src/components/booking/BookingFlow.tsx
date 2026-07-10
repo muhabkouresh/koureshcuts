@@ -828,8 +828,8 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
     return (
       <div className="mt-4 animate-fade-up rounded-xl bg-brand-soft px-4 py-4 text-center text-sm font-medium text-brand-700">
         ✓ Du stehst auf der Warteliste
-        {position !== null ? ` (Platz ${position})` : ""}. Wird an diesem Tag
-        ein Platz frei, bekommst du ihn per E-Mail exklusiv angeboten.
+        {position !== null ? ` (Platz ${position})` : ""}. Wir melden uns per
+        E-Mail, sobald an diesem Tag ein Platz frei wird.
       </div>
     );
   }
@@ -956,9 +956,8 @@ function GeneralWaitlistBox({
     return (
       <div className="mt-4 animate-fade-up rounded-xl bg-brand-soft px-4 py-4 text-center text-sm font-medium text-brand-700">
         ✓ Du stehst auf der Warteliste
-        {position !== null ? ` (Platz ${position})` : ""}. Sobald ein
-        passender Termin frei wird, bekommst du ihn per E-Mail exklusiv
-        angeboten — er ist dann eine Zeit lang nur für dich reserviert.
+        {position !== null ? ` (Platz ${position})` : ""}. Wir melden uns per
+        E-Mail, sobald ein passender Termin für dich frei wird.
       </div>
     );
   }

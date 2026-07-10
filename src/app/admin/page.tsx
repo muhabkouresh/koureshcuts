@@ -5,7 +5,6 @@ import { siteConfig } from "@/config/site";
 import { getSettings } from "@/lib/settings";
 import { getRevenueStats } from "@/lib/revenue";
 import { nowMs } from "@/lib/time";
-import { expireStaleOffers } from "@/lib/queue";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +13,6 @@ export default async function AdminPage() {
   if (!(await isAuthenticated())) {
     redirect("/admin/login");
   }
-
-  // Queue upkeep on every dashboard visit: cascade expired slot offers.
-  await expireStaleOffers();
 
   // Window for the calendar view: last ~31 days through ~92 days ahead.
   const from = new Date(nowMs() - 31 * 24 * 60 * 60_000);
@@ -61,14 +57,8 @@ export default async function AdminPage() {
             { date: { gte: new Date(nowMs() - 24 * 60 * 60_000) } },
           ],
         },
-        orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
-        include: {
-          service: { select: { name: true } },
-          offers: {
-            where: { status: "PENDING", expiresAt: { gt: new Date() } },
-            select: { startTime: true, expiresAt: true },
-          },
-        },
+        orderBy: { createdAt: "asc" },
+        include: { service: { select: { name: true } } },
         take: 500,
       }),
     ]);
@@ -126,17 +116,10 @@ export default async function AdminPage() {
       serviceName: w.service.name,
       date: w.date ? w.date.toISOString() : null,
       weekdays: w.weekdays,
-      priority: w.priority,
       createdAt: w.createdAt.toISOString(),
       customerName: w.customerName,
       customerEmail: w.customerEmail,
       notifiedAt: w.notifiedAt ? w.notifiedAt.toISOString() : null,
-      pendingOffer: w.offers[0]
-        ? {
-            start: w.offers[0].startTime.toISOString(),
-            until: w.offers[0].expiresAt.toISOString(),
-          }
-        : null,
     })),
   };
 

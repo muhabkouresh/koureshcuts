@@ -10,9 +10,9 @@ import { verifyCancelToken } from "@/lib/token";
 import { sendRescheduleEmails } from "@/lib/email";
 import { googleCalendarUrl } from "@/lib/calendar";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
-import { processFreedSlot, expireStaleOffers } from "@/lib/queue";
+import { notifyWaitlistForDay } from "@/lib/waitlist";
 import { sendAdminPush } from "@/lib/push";
-import { formatDateTimeLabel } from "@/lib/time";
+import { dateKey, formatDateTimeLabel } from "@/lib/time";
 import { getSettings } from "@/lib/settings";
 
 // POST /api/appointments/[id]/reschedule?t=<token>
@@ -83,8 +83,6 @@ export async function POST(
     );
   }
 
-  await expireStaleOffers();
-
   const start = new Date(parsed.data.start);
   const end = new Date(start.getTime() + appt.service.durationMinutes * 60_000);
   if (start.getTime() === appt.startTime.getTime()) {
@@ -130,18 +128,6 @@ export async function POST(
               select: { id: true },
             });
             if (clash) {
-              throw new Error("SLOT_TAKEN");
-            }
-            const held = await tx.slotOffer.findFirst({
-              where: {
-                status: "PENDING",
-                expiresAt: { gt: new Date() },
-                startTime: { lt: end },
-                endTime: { gt: start },
-              },
-              select: { id: true },
-            });
-            if (held) {
               throw new Error("SLOT_TAKEN");
             }
             await tx.appointment.update({
@@ -200,9 +186,15 @@ export async function POST(
     console.error("reschedule email failed", err);
   }
 
-  // The old slot is free again — offer it to the next person in the queue.
+  // The old day gained a free slot — tell anyone waiting for it.
   const tz = siteConfig.timezone;
-  await processFreedSlot(oldStart);
+  if (dateKey(oldStart, tz) !== dateKey(start, tz)) {
+    try {
+      await notifyWaitlistForDay(oldStart);
+    } catch (err) {
+      console.error("waitlist auto-notify failed", err);
+    }
+  }
 
   try {
     await sendAdminPush(

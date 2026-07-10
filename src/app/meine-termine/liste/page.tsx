@@ -89,12 +89,7 @@ export default async function MyAppointmentsListPage({
           AND: [
             // Stale entries for past days don't count toward the position.
             { OR: [{ date: null }, { date: { gte: new Date(nowMs() - 24 * 60 * 60_000) } }] },
-            {
-              OR: [
-                { priority: { gt: w.priority } },
-                { priority: w.priority, createdAt: { lte: w.createdAt } },
-              ],
-            },
+            { createdAt: { lte: w.createdAt } },
           ],
         },
       }),

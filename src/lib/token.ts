@@ -30,33 +30,6 @@ export function rescheduleUrl(id: string): string {
   return `${base}/termin/verschieben/${id}?t=${cancelToken(id)}`;
 }
 
-// Slot-offer token (waitlist fast lane). Domain-separated from the other
-// token types via the "offer:" prefix.
-export function offerToken(id: string): string {
-  if (!secret) return "";
-  return crypto
-    .createHmac("sha256", secret)
-    .update(`offer:${id}`)
-    .digest("base64url");
-}
-
-export function verifyOfferToken(
-  id: string,
-  token: string | undefined,
-): boolean {
-  if (!secret || !token) return false;
-  const expected = offerToken(id);
-  const a = Buffer.from(expected);
-  const b = Buffer.from(token);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
-/** Full public URL of a slot offer (accept/decline page). */
-export function offerUrl(id: string): string {
-  const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-  return `${base}/warteliste/angebot/${id}?t=${offerToken(id)}`;
-}
-
 // "Meine Termine" magic link: HMAC over the lowercased email. The "email:"
 // prefix domain-separates these tokens from the appointment-id cancel tokens.
 export function emailToken(email: string): string {

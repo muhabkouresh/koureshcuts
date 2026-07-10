@@ -3,7 +3,7 @@ import { siteConfig } from "@/config/site";
 import { formatDateTimeLabel, formatClock, formatLongDate } from "./time";
 import { priceFull } from "./format";
 import { buildIcs, googleCalendarUrl, type CalendarEvent } from "./calendar";
-import { cancelUrl, rescheduleUrl, myAppointmentsUrl, offerUrl } from "./token";
+import { cancelUrl, rescheduleUrl, myAppointmentsUrl } from "./token";
 
 // Email delivery via Resend. When RESEND_API_KEY is unset (local dev), emails
 // are logged to the console instead of being sent, so the flow is testable
@@ -197,8 +197,8 @@ export async function sendWaitlistJoinedEmails(
   const bodyText = day
     ? `der ${day} ist aktuell ausgebucht. Wir haben dich für <strong>${data.serviceName}</strong> auf die Warteliste gesetzt
        und melden uns, sobald ein Platz frei wird.`
-    : `wir haben dich für <strong>${data.serviceName}</strong> auf die Warteliste gesetzt. Sobald ein passender Termin frei
-       wird, bekommst du ihn per E-Mail <strong>exklusiv angeboten</strong> — eine Zeit lang ist er dann nur für dich reserviert.`;
+    : `wir haben dich für <strong>${data.serviceName}</strong> auf die Warteliste gesetzt und melden uns per E-Mail,
+       sobald ein passender Termin für dich frei wird.`;
 
   const customerHtml = layout(
     "",
@@ -256,45 +256,6 @@ export async function sendWaitlistSpotEmail(
     subject: day
       ? `Platz frei: ${data.serviceName} am ${day}`
       : `Platz frei: ${data.serviceName}`,
-    html,
-  });
-}
-
-/**
- * Exclusive slot offer to the first person in the waitlist queue: the slot is
- * held for them until `expiresAt`; one tap books it.
- */
-export async function sendSlotOfferEmail(data: {
-  offerId: string;
-  customerName: string;
-  customerEmail: string;
-  serviceName: string;
-  start: Date;
-  expiresAt: Date;
-}): Promise<{ ok: boolean }> {
-  const tz = siteConfig.timezone;
-  const html = layout(
-    "",
-    `<div style="text-align:center">
-       <div style="width:56px;height:56px;border-radius:50%;background:#1f9d3b;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">&#9733;</div>
-       <h2 style="margin:0;font-size:21px;font-weight:700">Ein Termin ist frei — exklusiv für dich reserviert</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
-       du stehst auf unserer Warteliste und bist jetzt dran! Dieser Termin ist bis
-       <strong>${formatClock(data.expiresAt, tz)} Uhr</strong> nur für dich reserviert:</p>
-     </div>
-     <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
-     <table style="width:100%;border-collapse:collapse;font-size:14px">
-       <tr><td style="padding:8px 0;color:#888">Service</td><td style="padding:8px 0;text-align:right;font-weight:600">${data.serviceName}</td></tr>
-       <tr><td style="padding:8px 0;color:#888">Termin</td><td style="padding:8px 0;text-align:right;font-weight:700">${formatDateTimeLabel(data.start, tz)}</td></tr>
-     </table>
-     <div style="margin:22px 0 8px;text-align:center">
-       <a href="${offerUrl(data.offerId)}" style="display:inline-block;background:#8a1f2b;color:#fff;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700">Termin jetzt sichern</a>
-     </div>
-     <p style="font-size:12px;color:#9ca3af;margin-top:12px;text-align:center">Passt nicht? Über den Link kannst du auch ablehnen — dann rückt die nächste Person nach und du bleibst auf der Liste.</p>`,
-  );
-  return send({
-    to: data.customerEmail,
-    subject: `Exklusiv reserviert: ${data.serviceName} — ${formatDateTimeLabel(data.start, tz)}`,
     html,
   });
 }

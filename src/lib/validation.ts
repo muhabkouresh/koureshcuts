@@ -107,9 +107,6 @@ export const specialDaySchema = z
     openMinute: z.number().int().min(0).max(1440),
     closeMinute: z.number().int().min(0).max(1440),
     isPublic: z.boolean().optional().default(true),
-    // Hours of waitlist head start: the day's slots are first offered to the
-    // queue and only become publicly bookable after this lead time (0 = off).
-    waitlistLeadHours: z.number().int().min(0).max(168).optional().default(0),
     note: z.string().trim().max(200).optional().default(""),
   })
   .refine((v) => v.closeMinute > v.openMinute, {

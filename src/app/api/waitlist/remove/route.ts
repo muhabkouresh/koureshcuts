@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyEmailToken } from "@/lib/token";
-import { releaseEntryOffers } from "@/lib/queue";
 import { z } from "zod";
 
 const schema = z.object({
@@ -35,17 +34,12 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Ungültiger Link." }, { status: 403 });
   }
 
-  // Only their own entry; free any held slot before removing it.
-  const entry = await prisma.waitlistEntry.findFirst({
+  // Only their own entry.
+  await prisma.waitlistEntry.deleteMany({
     where: {
       id: parsed.data.id,
       customerEmail: { equals: email, mode: "insensitive" },
     },
-    select: { id: true },
   });
-  if (entry) {
-    await releaseEntryOffers(entry.id);
-    await prisma.waitlistEntry.deleteMany({ where: { id: entry.id } });
-  }
   return Response.json({ ok: true });
 }

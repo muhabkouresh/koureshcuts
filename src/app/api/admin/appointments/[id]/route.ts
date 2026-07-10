@@ -1,7 +1,7 @@
 import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { appointmentActionSchema } from "@/lib/validation";
-import { processFreedSlot } from "@/lib/queue";
+import { notifyWaitlistForDay } from "@/lib/waitlist";
 import { sendShopCancellationEmail } from "@/lib/email";
 
 // PATCH /api/admin/appointments/[id] — update an appointment's status
@@ -77,8 +77,12 @@ export async function PATCH(
       }
     }
 
-    // A spot opened up — offer it exclusively to the next person in the queue.
-    await processFreedSlot(existing.startTime);
+    // A spot opened up — tell everyone waiting for this day.
+    try {
+      await notifyWaitlistForDay(existing.startTime);
+    } catch (err) {
+      console.error("waitlist auto-notify failed", err);
+    }
   }
 
   return Response.json({ ok: true, notified });
@@ -108,8 +112,12 @@ export async function DELETE(
 
   await prisma.appointment.delete({ where: { id } });
 
-  // The slot is free again — offer it to the next person in the queue.
-  await processFreedSlot(existing.startTime);
+  // Freeing the slot may open a previously-full day — notify the waitlist.
+  try {
+    await notifyWaitlistForDay(existing.startTime);
+  } catch (err) {
+    console.error("waitlist auto-notify failed", err);
+  }
 
   return Response.json({ ok: true });
 }

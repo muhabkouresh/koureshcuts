@@ -81,9 +81,6 @@ model SpecialDay {
   openMinute  Int      @default(540) // 09:00
   closeMinute Int      @default(1020) // 17:00
   isPublic    Boolean  @default(true)
-  /// When set and in the future, the day's (extended) hours are reserved for
-  /// waitlist offers first and only become publicly bookable at this instant.
-  publicFrom  DateTime?
   note        String   @default("")
   createdAt   DateTime @default(now())
 
@@ -147,44 +144,20 @@ model PushSubscription {
 }
 
 /// A customer waiting for a spot. `date` set = waiting for that specific day
-/// (start-of-day UTC for the shop timezone); `date` null = flexible entry that
-/// takes the next matching free slot, optionally restricted to `weekdays`
-/// (CSV of 0=Sunday…6=Saturday; empty = any day). Queue order: `priority`
-/// descending (admin can move someone up), then first come, first served.
-/// `notifiedAt` is only used by the legacy manual notify buttons.
+/// (start-of-day UTC for the shop timezone); `date` null = flexible entry
+/// ("next free slot"), optionally restricted to `weekdays` (CSV of
+/// 0=Sunday…6=Saturday; empty = any day). The admin assigns appointments from
+/// this list directly; `notifiedAt` tracks the manual "spot free" mail.
 model WaitlistEntry {
   id            String    @id @default(cuid())
   service       Service   @relation(fields: [serviceId], references: [id])
   serviceId     String
   date          DateTime?
   weekdays      String    @default("")
-  priority      Int       @default(0)
   customerName  String
   customerEmail String
   notifiedAt    DateTime?
   createdAt     DateTime  @default(now())
-  offers        SlotOffer[]
 
   @@index([date])
-}
-
-/// An exclusive, time-limited hold of a concrete slot for one waitlist entry.
-/// While PENDING and not expired it blocks the slot from public booking; on
-/// expiry or decline the slot cascades to the next matching entry.
-model SlotOffer {
-  id        String         @id @default(cuid())
-  // SetNull so an accepted offer survives its entry's deletion (history) —
-  // pending offers of a removed entry are expired explicitly in code.
-  entry     WaitlistEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
-  entryId   String?
-  serviceId String
-  startTime DateTime
-  endTime   DateTime
-  expiresAt DateTime
-  /// PENDING | ACCEPTED | DECLINED | EXPIRED
-  status    String        @default("PENDING")
-  createdAt DateTime      @default(now())
-
-  @@index([status, expiresAt])
-  @@index([startTime])
 }

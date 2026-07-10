@@ -81,15 +81,7 @@ export async function POST(request: NextRequest) {
   });
   const position = await prisma.waitlistEntry.count({
     where: {
-      AND: [
-        relevant,
-        {
-          OR: [
-            { priority: { gt: 0 } },
-            { priority: 0, createdAt: { lte: created.createdAt } },
-          ],
-        },
-      ],
+      AND: [relevant, { createdAt: { lte: created.createdAt } }],
     },
   });
 
