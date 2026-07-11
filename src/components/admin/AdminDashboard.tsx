@@ -574,6 +574,7 @@ function TermineTab({
           hours={hours}
           special={selectedSpecial}
           appointments={selectedList}
+          waitlist={waitlist}
           onChange={onChange}
           onBesetzen={(hhmm) => {
             setFormTime(hhmm);
@@ -796,6 +797,7 @@ function DaySlots({
   hours,
   special,
   appointments,
+  waitlist,
   onChange,
   onBesetzen,
 }: {
@@ -803,6 +805,7 @@ function DaySlots({
   hours: DayHours[];
   special: SpecialDay | null;
   appointments: Appointment[];
+  waitlist: WaitlistItem[];
   onChange: () => void;
   onBesetzen: (hhmm: string) => void;
 }) {
@@ -812,6 +815,52 @@ function DaySlots({
     apptId?: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  // Waitlist candidates for this day, best match first: exact wish day,
+  // then flexible entries whose weekdays fit, then everyone else.
+  const dayWd = weekdayOf(date);
+  const candidates = [...waitlist].sort((a, b) => {
+    const rank = (w: WaitlistItem) => {
+      if (w.date && dateKey(new Date(w.date), tz) === date) return 0;
+      if (!w.date && (!w.weekdays || w.weekdays.split(",").includes(String(dayWd))))
+        return 1;
+      return 2;
+    };
+    return rank(a) - rank(b) || a.createdAt.localeCompare(b.createdAt);
+  });
+
+  async function assignFromWaitlist(entryId: string, name: string) {
+    if (!sel) return;
+    if (
+      !window.confirm(
+        `${name} den Termin am ${longDateFromStr(date)} um ${sel.hhmm} Uhr fest zuteilen? Der Kunde bekommt die Bestätigung per E-Mail.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setPickError(null);
+    try {
+      const start = zonedToUtc(date, hhmmToMinutes(sel.hhmm), tz).toISOString();
+      const res = await fetch(`/api/admin/waitlist/${entryId}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPickError(d.error ?? "Zuteilung fehlgeschlagen.");
+        return;
+      }
+      setSel(null);
+      setPickOpen(false);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const dayHours = hours.find((h) => h.dayOfWeek === weekdayOf(date));
   const openMin = special ? special.openMinute : (dayHours?.openMinute ?? 0);
@@ -970,11 +1019,24 @@ function DaySlots({
                 onClick={() => {
                   onBesetzen(sel.hhmm);
                   setSel(null);
+                  setPickOpen(false);
                 }}
                 className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
               >
                 👤 Besetzen
               </button>
+              {candidates.length > 0 && (
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    setPickOpen((o) => !o);
+                    setPickError(null);
+                  }}
+                  className="rounded-lg border border-brand/40 bg-brand-soft px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand hover:text-white disabled:opacity-50"
+                >
+                  📋 Aus Warteliste
+                </button>
+              )}
             </>
           ) : (
             <button
@@ -986,11 +1048,62 @@ function DaySlots({
             </button>
           )}
           <button
-            onClick={() => setSel(null)}
+            onClick={() => {
+              setSel(null);
+              setPickOpen(false);
+            }}
             className="ml-auto rounded-lg px-2 py-1 text-xs text-muted hover:text-foreground"
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {sel?.kind === "free" && pickOpen && (
+        <div className="mt-2 rounded-xl border border-brand/30 bg-brand-soft/30 p-3">
+          <p className="text-xs font-semibold">
+            Wen aus der Warteliste um {sel.hhmm} Uhr eintragen?
+          </p>
+          {pickError && (
+            <p className="mt-2 text-xs text-red-600">{pickError}</p>
+          )}
+          <ul className="mt-2 flex max-h-64 flex-col gap-1.5 overflow-y-auto">
+            {candidates.slice(0, 12).map((w) => {
+              const exact =
+                w.date && dateKey(new Date(w.date), tz) === date;
+              return (
+                <li
+                  key={w.id}
+                  className="flex items-center justify-between gap-2 rounded-lg bg-background px-3 py-2 text-xs ring-1 ring-line"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold">
+                      {w.customerName}
+                      <span className="ml-1.5 font-normal text-muted">
+                        {w.serviceName}
+                      </span>
+                    </span>
+                    <span className={exact ? "font-medium text-brand" : "text-muted"}>
+                      {exact ? "✓ Wunschtag" : queueWishLabel(w)}
+                    </span>
+                  </span>
+                  <button
+                    disabled={busy}
+                    onClick={() => assignFromWaitlist(w.id, w.customerName)}
+                    className="shrink-0 rounded-lg bg-brand px-2.5 py-1.5 font-semibold text-white disabled:opacity-50"
+                  >
+                    Zuteilen
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {candidates.length > 12 && (
+            <p className="mt-1.5 text-[11px] text-muted">
+              … und {candidates.length - 12} weitere — alle in der Karte
+              „Warteliste gesamt“.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -1097,8 +1210,9 @@ function AssignBox({
   );
 }
 
-// The full waitlist across all days (incl. flexible entries). Each entry can
-// be assigned a concrete appointment directly or removed.
+// The full waitlist across all days, grouped per person (many customers put
+// themselves down for several days). Searchable; every wish can be assigned a
+// concrete appointment directly or removed.
 function QueueCard({
   entries,
   selectedDate,
@@ -1109,6 +1223,8 @@ function QueueCard({
   onChange: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [assignFor, setAssignFor] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -1125,6 +1241,32 @@ function QueueCard({
     }
   }
 
+  const q = query.toLowerCase().trim();
+  const filtered = q
+    ? entries.filter(
+        (w) =>
+          w.customerName.toLowerCase().includes(q) ||
+          w.customerEmail.toLowerCase().includes(q),
+      )
+    : entries;
+
+  // One group per person (email as key, name as fallback for walk-ins).
+  const groups = new Map<
+    string,
+    { name: string; email: string; items: WaitlistItem[] }
+  >();
+  for (const w of filtered) {
+    const key = (w.customerEmail || w.customerName).toLowerCase();
+    const g = groups.get(key) ?? {
+      name: w.customerName,
+      email: w.customerEmail,
+      items: [],
+    };
+    g.items.push(w);
+    groups.set(key, g);
+  }
+  const groupRows = [...groups.entries()];
+
   return (
     <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
       <button
@@ -1139,69 +1281,123 @@ function QueueCard({
           </span>
           <h3 className="text-sm font-bold">
             Warteliste gesamt{" "}
-            <span className="text-muted">({entries.length})</span>
+            <span className="text-muted">
+              ({groups.size || entries.length} Personen · {entries.length}{" "}
+              Wünsche)
+            </span>
           </h3>
         </div>
         <span className="text-sm text-muted">{open ? "▴" : "▾"}</span>
       </button>
       <p className="mt-1 text-xs text-muted">
-        Alle Wartenden über alle Tage. „Zuteilen“ bucht der Person direkt einen
+        Alle Wartenden, pro Person gebündelt. „Zuteilen“ bucht direkt einen
         festen Termin — z. B. einen Slot, den du an einen Tag anhängst.
       </p>
 
       {open && (
-        <ul className="mt-4 flex flex-col gap-2">
-          {entries.map((w) => (
-            <li
-              key={w.id}
-              className="rounded-xl bg-surface px-4 py-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">
-                    {w.customerName}
-                    <span className="ml-2 font-normal text-muted">
-                      {w.serviceName}
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted">
-                    {queueWishLabel(w)} · seit{" "}
-                    {formatDateLabel(new Date(w.createdAt), tz)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() =>
-                      setAssignFor(assignFor === w.id ? null : w.id)
-                    }
-                    className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white"
+        <>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Suche Name oder E-Mail…"
+            className="mt-3 w-full rounded-full border border-line bg-surface px-4 py-2 text-sm outline-none focus:border-brand"
+          />
+          {groupRows.length === 0 ? (
+            <p className="mt-3 rounded-lg bg-surface px-3 py-3 text-sm text-muted">
+              Keine Treffer.
+            </p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-2">
+              {groupRows.map(([key, g]) => {
+                const isOpen = expanded === key;
+                return (
+                  <li
+                    key={key}
+                    className="overflow-hidden rounded-xl bg-surface"
                   >
-                    Zuteilen
-                  </button>
-                  <button
-                    disabled={busyId === w.id}
-                    onClick={() => remove(w.id)}
-                    className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-red-400 hover:text-red-600 disabled:opacity-50"
-                  >
-                    Entfernen
-                  </button>
-                </div>
-              </div>
-              {assignFor === w.id && (
-                <AssignBox
-                  entry={w}
-                  defaultDate={
-                    w.date ? dateKey(new Date(w.date), tz) : selectedDate
-                  }
-                  onDone={() => {
-                    setAssignFor(null);
-                    onChange();
-                  }}
-                />
-              )}
-            </li>
-          ))}
-        </ul>
+                    <button
+                      onClick={() => {
+                        setExpanded(isOpen ? null : key);
+                        setAssignFor(null);
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-background"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-bold text-brand-700">
+                        {(g.name.trim()[0] || "?").toUpperCase()}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">
+                          {g.name}
+                        </span>
+                        <span className="block truncate text-xs text-muted">
+                          {g.email || "keine E-Mail"}
+                        </span>
+                      </span>
+                      <span className="shrink-0 rounded-full bg-brand-soft px-2.5 py-1 text-[11px] font-semibold text-brand-700">
+                        {g.items.length} Wunsch{g.items.length === 1 ? "" : "termine"}
+                      </span>
+                    </button>
+                    {isOpen && (
+                      <ul className="border-t border-line bg-background px-4 py-2">
+                        {g.items.map((w) => (
+                          <li
+                            key={w.id}
+                            className="border-b border-line py-2.5 last:border-0"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="min-w-0 text-sm">
+                                <span className="font-medium">
+                                  {queueWishLabel(w)}
+                                </span>
+                                <span className="ml-2 text-xs text-muted">
+                                  {w.serviceName} · seit{" "}
+                                  {formatDateLabel(new Date(w.createdAt), tz)}
+                                </span>
+                              </span>
+                              <span className="flex shrink-0 items-center gap-2">
+                                <button
+                                  onClick={() =>
+                                    setAssignFor(
+                                      assignFor === w.id ? null : w.id,
+                                    )
+                                  }
+                                  className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white"
+                                >
+                                  Zuteilen
+                                </button>
+                                <button
+                                  disabled={busyId === w.id}
+                                  onClick={() => remove(w.id)}
+                                  className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-red-400 hover:text-red-600 disabled:opacity-50"
+                                >
+                                  Entfernen
+                                </button>
+                              </span>
+                            </div>
+                            {assignFor === w.id && (
+                              <AssignBox
+                                entry={w}
+                                defaultDate={
+                                  w.date
+                                    ? dateKey(new Date(w.date), tz)
+                                    : selectedDate
+                                }
+                                onDone={() => {
+                                  setAssignFor(null);
+                                  onChange();
+                                }}
+                              />
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
     </section>
   );

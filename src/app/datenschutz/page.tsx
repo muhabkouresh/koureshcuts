@@ -35,10 +35,24 @@ export default function DatenschutzPage() {
               Telefonnummer, gewünschter Termin)
             </li>
             <li>
+              Wartelisten-Daten (z. B. Name, E-Mail-Adresse und gewünschte
+              Termintage, wenn du dich auf die Warteliste einträgst)
+            </li>
+            <li>
+              Terminhistorie und Notizen zur Terminabwicklung (z. B.
+              Absagegründe, wahrgenommene und nicht wahrgenommene Termine)
+            </li>
+            <li>
               Technische Daten (z. B. IP-Adresse, Datum und Uhrzeit des
               Zugriffs)
             </li>
           </ul>
+          <p className="mt-2">
+            Zur Komfortfunktion „Meine Termine“ können Zugangsdaten lokal in
+            deinem Browser (localStorage) gespeichert werden. Diese Daten
+            verbleiben auf deinem Gerät und können dort jederzeit über die
+            Abmelden-Funktion oder die Browser-Einstellungen gelöscht werden.
+          </p>
         </section>
 
         <section>
@@ -46,6 +60,14 @@ export default function DatenschutzPage() {
           <p className="mt-2">Die Datenverarbeitung erfolgt zur:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li>Bearbeitung von Terminanfragen und Buchungen</li>
+            <li>
+              Verwaltung der Warteliste und Information über frei werdende
+              Termine
+            </li>
+            <li>
+              Versand von Terminbestätigungen, -erinnerungen und
+              -benachrichtigungen per E-Mail
+            </li>
             <li>Kommunikation mit Kundinnen und Kunden</li>
             <li>Erfüllung vertraglicher und vorvertraglicher Pflichten</li>
           </ul>
@@ -65,7 +87,8 @@ export default function DatenschutzPage() {
           <p className="mt-2">
             Personenbezogene Daten werden nur so lange gespeichert, wie es für
             die jeweiligen Zwecke erforderlich ist oder gesetzliche
-            Aufbewahrungspflichten bestehen.
+            Aufbewahrungspflichten bestehen. Wartelisten-Einträge werden
+            automatisch gelöscht, wenn der gewünschte Termintag vorüber ist.
           </p>
         </section>
 

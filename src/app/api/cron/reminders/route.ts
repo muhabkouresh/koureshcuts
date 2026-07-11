@@ -14,9 +14,26 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
   }
 
+  // Waitlist hygiene: drop entries whose requested day is more than 7 days
+  // past, and flexible entries older than 90 days — the list stays tidy
+  // without the owner ever cleaning up manually.
+  const nowTs = Date.now();
+  const cleanedDay = await prisma.waitlistEntry.deleteMany({
+    where: { date: { lt: new Date(nowTs - 7 * 24 * 60 * 60_000) } },
+  });
+  const cleanedFlex = await prisma.waitlistEntry.deleteMany({
+    where: { date: null, createdAt: { lt: new Date(nowTs - 90 * 24 * 60 * 60_000) } },
+  });
+
   const settings = await getSettings();
   if (!settings.reminderEnabled) {
-    return Response.json({ ok: true, disabled: true, considered: 0, sent: 0 });
+    return Response.json({
+      ok: true,
+      disabled: true,
+      considered: 0,
+      sent: 0,
+      waitlistCleaned: cleanedDay.count + cleanedFlex.count,
+    });
   }
 
   const now = new Date();
@@ -57,5 +74,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return Response.json({ ok: true, considered: due.length, sent });
+  return Response.json({
+    ok: true,
+    considered: due.length,
+    sent,
+    waitlistCleaned: cleanedDay.count + cleanedFlex.count,
+  });
 }
