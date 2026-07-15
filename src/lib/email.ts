@@ -350,6 +350,68 @@ export async function sendRescheduleEmails(
 }
 
 /**
+ * Tell the customer that the SHOP moved their appointment to a new time
+ * (admin action), with an optional reason, old → new time and calendar links.
+ * No owner copy — the owner triggered the change themselves.
+ */
+export async function sendShopRescheduleEmail(
+  data: BookingEmailData,
+  oldStart: Date,
+  reason?: string,
+): Promise<void> {
+  if (!data.customerEmail) return;
+  const tz = siteConfig.timezone;
+  const event = calendarEvent(data);
+  const gcal = googleCalendarUrl(event);
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const icsUrl = `${siteUrl}/api/appointments/${data.id}/ics`;
+  let ics: string | undefined;
+  try {
+    ics = buildIcs(event);
+  } catch (e) {
+    console.error("ics build failed", e);
+  }
+  const reasonRow = reason?.trim()
+    ? `<p style="font-size:14px;color:#555;margin:14px 0 0"><strong>Grund:</strong> ${reason.trim()}</p>`
+    : "";
+
+  const html = layout(
+    "",
+    `<div style="text-align:center">
+       <div style="width:56px;height:56px;border-radius:50%;background:#b45309;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">&#8644;</div>
+       <h2 style="margin:0;font-size:21px;font-weight:700">Dein Termin wurde verlegt</h2>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       wir mussten deinen Termin leider auf eine neue Zeit verlegen. Hier sind die Details:</p>
+       ${reasonRow}
+     </div>
+     <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
+     <table style="width:100%;border-collapse:collapse;font-size:14px">
+       <tr><td style="padding:8px 0;color:#888">Alter Termin</td><td style="padding:8px 0;text-align:right;color:#888;text-decoration:line-through">${formatDateTimeLabel(oldStart, tz)}</td></tr>
+       <tr><td style="padding:8px 0;color:#888">Neuer Termin</td><td style="padding:8px 0;text-align:right;font-weight:700">${formatDateTimeLabel(data.start, tz)}</td></tr>
+       <tr><td style="padding:8px 0;color:#888">Service</td><td style="padding:8px 0;text-align:right;font-weight:600">${data.serviceName}</td></tr>
+       <tr><td style="padding:8px 0;color:#888">Preis</td><td style="padding:8px 0;text-align:right;font-weight:600">${priceFull(data.priceCents)} (Zahlung vor Ort)</td></tr>
+     </table>
+     <p style="font-size:13px;color:#555;margin:16px 0 0;text-align:center">Passt die neue Zeit nicht? Dann kannst du den Termin unten verschieben oder absagen.</p>
+     <div style="margin:14px 0 4px;text-align:center">
+       <a href="${rescheduleUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;margin:0 6px 8px 0">Termin verschieben</a>
+       <a href="${cancelUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;margin:0 0 8px">Termin absagen</a>
+     </div>
+     <div style="margin:14px 0 0;text-align:center">
+       <p style="font-size:13px;color:#888;margin:6px 0 4px">Zum Kalender hinzufügen</p>
+       <a href="${gcal}" style="font-size:13px;color:#8a1f2b;text-decoration:underline">Google Kalender</a>
+       <span style="color:#d6d3d1;margin:0 8px">·</span>
+       <a href="${icsUrl}" style="font-size:13px;color:#8a1f2b;text-decoration:underline">Apple Kalender</a>
+     </div>`,
+  );
+  await send({
+    to: data.customerEmail,
+    subject: `Neue Terminzeit: ${data.serviceName} — ${formatDateTimeLabel(data.start, tz)}`,
+    html,
+    attachIcs: ics,
+  });
+}
+
+/**
  * Tell the customer that the SHOP cancelled their appointment (admin action or
  * a new day off covering the booking), with an optional reason and a CTA to
  * pick a new time.
