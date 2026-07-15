@@ -3,7 +3,7 @@ import { siteConfig } from "@/config/site";
 import { formatDateTimeLabel, formatClock, formatLongDate } from "./time";
 import { priceFull } from "./format";
 import { buildIcs, googleCalendarUrl, type CalendarEvent } from "./calendar";
-import { cancelUrl, rescheduleUrl, myAppointmentsUrl } from "./token";
+import { cancelUrl, rescheduleUrl, myAppointmentsUrl, emailToken } from "./token";
 
 // Email delivery via Resend. When RESEND_API_KEY is unset (local dev), emails
 // are logged to the console instead of being sent, so the flow is testable
@@ -409,6 +409,77 @@ export async function sendShopRescheduleEmail(
     html,
     attachIcs: ics,
   });
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Owner-composed broadcast ("Rundmail") to many customers — news, vacation
+ * announcements etc. Sent via Resend's batch API in chunks of 100; every mail
+ * carries a personal unsubscribe link (see EmailOptOut). Returns per-address
+ * success counts.
+ */
+export async function sendBroadcastEmails(
+  recipients: string[],
+  subject: string,
+  message: string,
+): Promise<{ sent: number; failed: number }> {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const bodyHtml = `<p style="font-size:14px;color:#333;line-height:1.7;white-space:pre-wrap;margin:0">${escapeHtml(message.trim())}</p>`;
+
+  const payloads = recipients.map((email) => {
+    const e = Buffer.from(email.trim().toLowerCase()).toString("base64url");
+    const unsubscribeUrl = `${siteUrl}/news/abmelden?e=${e}&t=${emailToken(email)}`;
+    return {
+      from: FROM,
+      to: email,
+      subject,
+      html: layout(
+        "",
+        `${bodyHtml}
+         <hr style="border:none;border-top:1px solid #eee;margin:24px 0 14px"/>
+         <p style="font-size:12px;color:#999;margin:0;text-align:center">
+           Du erhältst diese E-Mail, weil du Kunde bei ${siteConfig.name} bist.<br/>
+           <a href="${unsubscribeUrl}" style="color:#999;text-decoration:underline">Keine solchen E-Mails mehr erhalten</a>
+         </p>`,
+      ),
+      headers: {
+        "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      },
+    };
+  });
+
+  if (!resend) {
+    console.log(
+      `\n[email:dev] Rundmail "${subject}" an ${payloads.length} Empfänger (RESEND_API_KEY setzen, um wirklich zu senden)\n`,
+    );
+    return { sent: payloads.length, failed: 0 };
+  }
+
+  let sent = 0;
+  let failed = 0;
+  for (let i = 0; i < payloads.length; i += 100) {
+    const chunk = payloads.slice(i, i + 100);
+    try {
+      const { error } = await resend.batch.send(chunk);
+      if (error) {
+        console.error("[resend] Rundmail-Batch fehlgeschlagen:", error);
+        failed += chunk.length;
+      } else {
+        sent += chunk.length;
+      }
+    } catch (err) {
+      console.error("[resend] Rundmail-Batch fehlgeschlagen:", err);
+      failed += chunk.length;
+    }
+  }
+  console.log(`[resend] Rundmail: ${sent} gesendet, ${failed} fehlgeschlagen`);
+  return { sent, failed };
 }
 
 /**

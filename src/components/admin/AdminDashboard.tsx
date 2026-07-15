@@ -600,6 +600,19 @@ function TermineTab({
         </ul>
       )}
 
+      {selected <= today &&
+        realAppts.some(
+          (a) => a.status === "PENDING" || a.status === "CONFIRMED",
+        ) && (
+          <CloseDayCard
+            key={selected}
+            appointments={realAppts.filter(
+              (a) => a.status === "PENDING" || a.status === "CONFIRMED",
+            )}
+            onChange={onChange}
+          />
+        )}
+
       {selectedWaitlist.length > 0 && (
         <WaitlistPanel
           entries={selectedWaitlist}
@@ -2201,6 +2214,134 @@ function AgendaCard({
   );
 }
 
+// End-of-day wrap-up: one pass over the day's remaining active appointments,
+// each toggled "erschienen" (default) or "No-Show", then a single bulk save.
+function CloseDayCard({
+  appointments,
+  onChange,
+}: {
+  appointments: Appointment[];
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // ids marked as no-show; everyone else counts as erschienen.
+  const [noShowIds, setNoShowIds] = useState<Set<string>>(new Set());
+
+  function toggle(id: string) {
+    setNoShowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function closeDay() {
+    const completed = appointments
+      .filter((a) => !noShowIds.has(a.id))
+      .map((a) => a.id);
+    const noShows = appointments
+      .filter((a) => noShowIds.has(a.id))
+      .map((a) => a.id);
+    if (
+      !window.confirm(
+        `Tag abschließen? ${completed.length} × erledigt` +
+          (noShows.length ? `, ${noShows.length} × No-Show` : "") +
+          ".",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/appointments/close-day", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed, noShows }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error ?? "Abschließen fehlgeschlagen.");
+        return;
+      }
+      setOpen(false);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="text-sm font-semibold">
+          Tag abschließen{" "}
+          <span className="font-medium text-muted">
+            ({appointments.length} offen)
+          </span>
+        </span>
+        <span className="text-muted">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="mt-3">
+          <p className="text-xs text-muted">
+            Alle stehen auf „erschienen“ — nur No-Shows antippen, dann
+            abschließen. No-Shows zählen für die automatische Sperre.
+          </p>
+          <ul className="mt-3 flex flex-col gap-1.5">
+            {appointments.map((a) => {
+              const isNoShow = noShowIds.has(a.id);
+              return (
+                <li key={a.id}>
+                  <button
+                    disabled={busy}
+                    onClick={() => toggle(a.id)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ring-1 transition-colors ${
+                      isNoShow
+                        ? "bg-orange-50 ring-orange-300"
+                        : "bg-background ring-line"
+                    }`}
+                  >
+                    <span className="min-w-0 truncate">
+                      {formatClock(new Date(a.start), tz)} · {a.customerName}
+                      <span className="text-muted"> · {a.serviceName}</span>
+                    </span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        isNoShow
+                          ? "bg-orange-100 text-orange-700"
+                          : "bg-green-100 text-green-700"
+                      }`}
+                    >
+                      {isNoShow ? "✗ No-Show" : "✓ erschienen"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <button
+            disabled={busy}
+            onClick={closeDay}
+            className="mt-3 rounded-lg bg-brand px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            {busy
+              ? "…"
+              : `Abschließen (${appointments.length - noShowIds.size} erledigt${noShowIds.size ? `, ${noShowIds.size} No-Show` : ""})`}
+          </button>
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function FeedBox({ feedUrl }: { feedUrl: string }) {
   const [copied, setCopied] = useState(false);
   const webcal = feedUrl.replace(/^https?:\/\//, "webcal://");
@@ -2958,6 +3099,8 @@ function KundenTab({
         </ul>
       )}
 
+      <BroadcastCard />
+
       {blocked.length > 0 && (
         <section className="rounded-2xl border border-red-200 bg-red-50/40 p-4">
           <h3 className="text-sm font-semibold text-red-800">
@@ -2991,6 +3134,128 @@ function KundenTab({
         </section>
       )}
     </div>
+  );
+}
+
+// Compose-and-send news email ("Rundmail") to every customer who ever booked,
+// minus unsubscribed addresses. Every mail carries a personal opt-out link.
+function BroadcastCard() {
+  const [open, setOpen] = useState(false);
+  const [count, setCount] = useState<number | null>(null);
+  const [optedOut, setOptedOut] = useState(0);
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || count !== null) return;
+    fetch("/api/admin/broadcast")
+      .then((r) => r.json())
+      .then((d) => {
+        setCount(d.recipients ?? 0);
+        setOptedOut(d.optedOut ?? 0);
+      })
+      .catch(() => {});
+  }, [open, count]);
+
+  async function sendBroadcast() {
+    if (!subject.trim() || !message.trim()) {
+      setError("Bitte Betreff und Nachricht ausfüllen.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Rundmail "${subject.trim()}" jetzt an ${count ?? "alle"} Kunden senden? Das kann nicht rückgängig gemacht werden.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: subject.trim(),
+          message: message.trim(),
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error ?? "Versand fehlgeschlagen.");
+        return;
+      }
+      setResult(
+        `Gesendet an ${d.sent} von ${d.total} Kunden` +
+          (d.failed ? ` — ${d.failed} fehlgeschlagen.` : "."),
+      );
+      setSubject("");
+      setMessage("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="text-sm font-semibold">
+          📣 Rundmail an alle Kunden
+          {count !== null && (
+            <span className="font-medium text-muted"> ({count} Empfänger)</span>
+          )}
+        </span>
+        <span className="text-muted">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="mt-3">
+          <p className="text-xs text-muted">
+            Für News und Ankündigungen, z. B. Betriebsferien oder geänderte
+            Zeiten. Geht an alle Kunden, die je gebucht haben
+            {optedOut > 0 ? ` (${optedOut} abgemeldet)` : ""}. Jede E-Mail
+            enthält automatisch einen Abmelde-Link.
+          </p>
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            maxLength={150}
+            placeholder="Betreff, z. B. Betriebsferien vom 13.–21. Juli"
+            className="mt-3 w-full rounded-lg border border-line bg-background px-3 py-2 text-sm"
+          />
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            maxLength={5000}
+            rows={6}
+            placeholder={
+              "Deine Nachricht — Zeilenumbrüche werden übernommen.\n\nz. B.: Liebe Kunden, vom 13. bis 21. Juli bleibt der Laden geschlossen. Sichert euch jetzt noch einen der letzten Termine davor!"
+            }
+            className="mt-2 w-full rounded-lg border border-line bg-background px-3 py-2 text-sm"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button
+              disabled={busy || !subject.trim() || !message.trim()}
+              onClick={sendBroadcast}
+              className="rounded-lg bg-brand px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {busy
+                ? "Wird gesendet…"
+                : `An ${count ?? "…"} Kunden senden`}
+            </button>
+            {result && <span className="text-xs text-green-700">{result}</span>}
+            {error && <span className="text-xs text-red-600">{error}</span>}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -68,6 +68,11 @@ export default function DatenschutzPage() {
               Versand von Terminbestätigungen, -erinnerungen und
               -benachrichtigungen per E-Mail
             </li>
+            <li>
+              Gelegentliche Informationen des Shops per E-Mail (z. B.
+              Betriebsferien oder geänderte Öffnungszeiten) — jede dieser
+              E-Mails enthält einen Abmelde-Link
+            </li>
             <li>Kommunikation mit Kundinnen und Kunden</li>
             <li>Erfüllung vertraglicher und vorvertraglicher Pflichten</li>
           </ul>

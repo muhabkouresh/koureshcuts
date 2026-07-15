@@ -133,6 +133,14 @@ model BlockedCustomer {
   createdAt DateTime @default(now())
 }
 
+/// Customers who unsubscribed from broadcast/news emails (lowercase). Only
+/// affects Rundmails — transactional emails (confirmations etc.) still go out.
+model EmailOptOut {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+
 /// A Web-Push subscription of the admin PWA (owner's phone/browser). Every
 /// subscription receives a push notification on new bookings/cancellations.
 model PushSubscription {
