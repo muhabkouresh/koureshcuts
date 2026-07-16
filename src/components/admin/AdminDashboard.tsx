@@ -524,7 +524,7 @@ function TermineTab({
                 >
                   {Number(ds.slice(8))}
                 </span>
-                <span className="flex h-1.5 items-center gap-0.5">
+                <span className="flex h-3.5 items-center gap-0.5">
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
                       active > 0
@@ -538,9 +538,11 @@ function TermineTab({
                   />
                   {wl > 0 && (
                     <span
-                      className="h-1.5 w-1.5 rounded-full bg-amber-500"
-                      title={`${wl} auf Warteliste`}
-                    />
+                      className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-amber-400 px-0.5 text-[9px] font-bold leading-none text-amber-950"
+                      title={`${wl} auf der Warteliste`}
+                    >
+                      {wl}
+                    </span>
                   )}
                 </span>
               </button>
