@@ -59,6 +59,8 @@ model Settings {
   maxActiveBookingsPerEmail Int @default(0)
   /// No-shows after which an email loses online booking (0 = never block).
   noShowBlockThreshold Int @default(2)
+  /// Win-back email after N weeks without a visit (0 = off).
+  winbackWeeks Int @default(0)
   updatedAt         DateTime @updatedAt
 }
 
@@ -141,6 +143,24 @@ model EmailOptOut {
   createdAt DateTime @default(now())
 }
 
+/// Customers (lowercase email) whose online bookings need manual approval:
+/// the appointment is created PENDING and only confirmed by the owner.
+/// A softer step than the full BlockedCustomer block.
+model ReviewCustomer {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  reason    String   @default("")
+  createdAt DateTime @default(now())
+}
+
+/// Tracks the win-back email per customer (lowercase) so each booking lapse
+/// triggers at most one "we miss you" mail (re-sent only after a new visit).
+model WinbackLog {
+  id     String   @id @default(cuid())
+  email  String   @unique
+  sentAt DateTime
+}
+
 /// A Web-Push subscription of the admin PWA (owner's phone/browser). Every
 /// subscription receives a push notification on new bookings/cancellations.
 model PushSubscription {
@@ -161,10 +181,13 @@ model CustomerPush {
   p256dh     String
   auth       String
   date       DateTime?
+  /// Customer email (lowercase) when known — enables reminder pushes.
+  email      String    @default("")
   notifiedAt DateTime?
   createdAt  DateTime  @default(now())
 
   @@index([date])
+  @@index([email])
 }
 
 /// A customer waiting for a spot. `date` set = waiting for that specific day

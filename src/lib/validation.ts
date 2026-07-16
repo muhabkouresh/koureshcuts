@@ -164,6 +164,8 @@ export const settingsSchema = z
     maxActiveBookingsPerEmail: z.number().int().min(0).max(10).optional(),
     // No-shows after which online booking is blocked (0 = never).
     noShowBlockThreshold: z.number().int().min(0).max(10).optional(),
+    // Win-back email after N weeks without a visit (0 = off).
+    winbackWeeks: z.number().int().min(0).max(52).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: "Keine Änderungen übergeben.",

@@ -2,7 +2,8 @@
 // - Hashed build assets (/_next/static) and images are cache-first: they are
 //   immutable, so serving from cache makes app launches near-instant.
 // - Page navigations stay network-first (fresh HTML), falling back to the
-//   last cached copy when offline. Admin pages are never cached (private).
+//   last cached copy when offline — including /admin, so the owner's day
+//   plan survives a Wi-Fi drop (device-local cache only).
 // - API requests are never touched — availability must always be live.
 const CACHE = "koureshcuts-v2";
 const FALLBACK = "/";
@@ -64,12 +65,13 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (req.mode === "navigate") {
-    const isAdmin = url.pathname.startsWith("/admin");
     event.respondWith(
       fetch(req)
         .then((res) => {
-          // Keep the last good copy of public pages for offline use.
-          if (res.ok && !isAdmin) {
+          // Keep the last good copy for offline use. This includes /admin:
+          // the owner's day plan stays readable when the shop Wi-Fi drops
+          // (cached only on their own device, always refreshed when online).
+          if (res.ok) {
             const copy = res.clone();
             caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
           }

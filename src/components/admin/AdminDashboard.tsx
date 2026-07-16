@@ -86,6 +86,7 @@ type Data = {
   cancelDeadlineHours: number;
   maxActiveBookingsPerEmail: number;
   noShowBlockThreshold: number;
+  winbackWeeks: number;
   revenue: RevenueStats;
   services: Service[];
   appointments: Appointment[];
@@ -115,7 +116,7 @@ const TIME_OPTIONS: string[] = Array.from({ length: (24 * 60) / 15 }, (_, i) =>
 
 const STATUS_LABEL: Record<string, string> = {
   CONFIRMED: "bestätigt",
-  PENDING: "offen",
+  PENDING: "wartet auf Freigabe",
   CANCELLED: "storniert",
   COMPLETED: "erledigt",
   NO_SHOW: "nicht erschienen",
@@ -154,6 +155,30 @@ export default function AdminDashboard({
   const [tab, setTab] = useState<
     "termine" | "kunden" | "umsatz" | "services" | "verfuegbarkeit" | "verspaetungen"
   >("termine");
+  // Global search can jump into a tab with a preselected date/customer; a
+  // bumped key remounts the tab so its internal state picks the target up.
+  const [jump, setJump] = useState<{
+    n: number;
+    date?: string;
+    customerQuery?: string;
+  }>({ n: 0 });
+  // Offline indicator — the SW serves the last cached copy of this page, so
+  // the plan stays readable; actions need the network again.
+  const [offline, setOffline] = useState(false);
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- client-only navigator state */
+    setOffline(!navigator.onLine);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -180,6 +205,25 @@ export default function AdminDashboard({
           Abmelden
         </button>
       </div>
+
+      {offline && (
+        <p className="mt-4 rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 ring-1 ring-amber-200">
+          📴 Offline — du siehst den zuletzt geladenen Stand. Änderungen sind
+          erst wieder mit Internet möglich.
+        </p>
+      )}
+
+      <GlobalSearch
+        appointments={data.appointments}
+        onOpenDay={(date) =>
+          setJump((j) => ({ n: j.n + 1, date }))
+        }
+        onOpenCustomer={(q) =>
+          setJump((j) => ({ n: j.n + 1, customerQuery: q }))
+        }
+        goToTermine={() => setTab("termine")}
+        goToKunden={() => setTab("kunden")}
+      />
 
       <div className="mt-6 inline-flex flex-wrap gap-1 rounded-2xl border border-line bg-background p-1 text-sm shadow-soft">
         {(
@@ -208,6 +252,8 @@ export default function AdminDashboard({
 
       {tab === "termine" && (
         <TermineTab
+          key={`t-${jump.n}`}
+          initialDate={jump.date}
           appointments={data.appointments}
           services={data.services}
           hours={data.hours}
@@ -221,8 +267,11 @@ export default function AdminDashboard({
       )}
       {tab === "kunden" && (
         <KundenTab
+          key={`k-${jump.n}`}
+          initialQuery={jump.customerQuery}
           services={data.services}
           noShowThreshold={data.noShowBlockThreshold}
+          winbackWeeks={data.winbackWeeks}
           onChange={() => router.refresh()}
         />
       )}
@@ -244,6 +293,136 @@ export default function AdminDashboard({
       )}
       {tab === "verspaetungen" && <VerspaetungenTab />}
     </main>
+  );
+}
+
+/* ------------------------------- Global search ------------------------------ */
+
+// Cross-tab quick search: type a name/email/phone, jump straight to a
+// customer's next appointment (Termine tab) or their profile (Kunden tab).
+function GlobalSearch({
+  appointments,
+  onOpenDay,
+  onOpenCustomer,
+  goToTermine,
+  goToKunden,
+}: {
+  appointments: Appointment[];
+  onOpenDay: (date: string) => void;
+  onOpenCustomer: (query: string) => void;
+  goToTermine: () => void;
+  goToKunden: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const query = q.trim().toLowerCase();
+
+  const results = useMemo(() => {
+    if (query.length < 2) return [];
+    const now = nowMs();
+    const map = new Map<
+      string,
+      {
+        name: string;
+        email: string;
+        phone: string;
+        upcoming: { id: string; start: string }[];
+      }
+    >();
+    for (const a of appointments) {
+      if (a.status === "BLOCKED") continue;
+      const key = (a.customerEmail || a.customerName).toLowerCase();
+      if (!key) continue;
+      let entry = map.get(key);
+      if (!entry) {
+        entry = {
+          name: a.customerName,
+          email: a.customerEmail,
+          phone: a.customerPhone,
+          upcoming: [],
+        };
+        map.set(key, entry);
+      }
+      const isActive = a.status === "CONFIRMED" || a.status === "PENDING";
+      if (isActive && new Date(a.start).getTime() > now) {
+        entry.upcoming.push({ id: a.id, start: a.start });
+      }
+    }
+    const matches = [...map.values()].filter(
+      (c) =>
+        c.name.toLowerCase().includes(query) ||
+        c.email.toLowerCase().includes(query) ||
+        (c.phone && c.phone.toLowerCase().includes(query)),
+    );
+    for (const m of matches) {
+      m.upcoming.sort((a, b) => a.start.localeCompare(b.start));
+    }
+    return matches.slice(0, 6);
+  }, [appointments, query]);
+
+  return (
+    <div className="relative mt-4">
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="🔎 Schnellsuche: Name, E-Mail oder Telefon…"
+        className="w-full rounded-full border border-line bg-surface px-5 py-2.5 text-sm outline-none focus:border-brand"
+      />
+      {query.length >= 2 && (
+        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-line bg-background shadow-soft">
+          {results.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-muted">Keine Treffer.</p>
+          ) : (
+            <ul>
+              {results.map((c) => (
+                <li
+                  key={`${c.name}|${c.email}`}
+                  className="border-b border-line px-4 py-3 last:border-b-0"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-bold">
+                        {c.name}
+                      </span>
+                      <span className="block truncate text-xs text-muted">
+                        {c.email || c.phone || "—"}
+                      </span>
+                    </span>
+                    <button
+                      onClick={() => {
+                        goToKunden();
+                        onOpenCustomer(c.email || c.name);
+                        setQ("");
+                      }}
+                      className="shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-line hover:ring-brand"
+                    >
+                      Kundenprofil
+                    </button>
+                  </div>
+                  {c.upcoming.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {c.upcoming.slice(0, 3).map((u) => (
+                        <button
+                          key={u.id}
+                          onClick={() => {
+                            goToTermine();
+                            onOpenDay(dateKey(new Date(u.start), tz));
+                            setQ("");
+                          }}
+                          className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-medium text-brand-700 hover:bg-brand hover:text-white"
+                        >
+                          {formatDateLabel(new Date(u.start), tz)} ·{" "}
+                          {formatClock(new Date(u.start), tz)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -280,6 +459,7 @@ function StatCard({
 }
 
 function TermineTab({
+  initialDate,
   appointments,
   services,
   hours,
@@ -290,6 +470,7 @@ function TermineTab({
   siteName,
   onChange,
 }: {
+  initialDate?: string;
   appointments: Appointment[];
   services: Service[];
   hours: DayHours[];
@@ -301,7 +482,7 @@ function TermineTab({
   onChange: () => void;
 }) {
   const today = useMemo(() => todayInTz(tz), []);
-  const [selected, setSelected] = useState<string>(today);
+  const [selected, setSelected] = useState<string>(initialDate ?? today);
   const [showForm, setShowForm] = useState(false);
   // When "Besetzen" is chosen for a specific free slot, prefill the form's time.
   const [formTime, setFormTime] = useState<string | undefined>(undefined);
@@ -2193,6 +2374,15 @@ function AgendaCard({
           </p>
           {a.notes && <p className="mt-1 text-muted">Notiz: {a.notes}</p>}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            {a.status === "PENDING" && !isPast && (
+              <button
+                disabled={busy}
+                onClick={() => setStatus("CONFIRMED")}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+              >
+                ✓ Freigeben
+              </button>
+            )}
             {a.status !== "CANCELLED" && (
               <button
                 disabled={busy}
@@ -3033,17 +3223,21 @@ type CustomerStat = {
 };
 
 function KundenTab({
+  initialQuery,
   services,
   noShowThreshold,
+  winbackWeeks,
   onChange,
 }: {
+  initialQuery?: string;
   services: Service[];
   noShowThreshold: number;
+  winbackWeeks: number;
   onChange: () => void;
 }) {
   const [customers, setCustomers] = useState<CustomerStat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [schedulingFor, setSchedulingFor] = useState<string | null>(null);
   const [newAppt, setNewAppt] = useState(false);
@@ -3052,6 +3246,8 @@ function KundenTab({
     { email: string; reason: string }[]
   >([]);
   const [blockBusy, setBlockBusy] = useState(false);
+  // Approval list: these emails book PENDING until the owner confirms.
+  const [review, setReview] = useState<{ email: string; reason: string }[]>([]);
 
   function loadBlocklist() {
     fetch("/api/admin/blocklist")
@@ -3064,6 +3260,17 @@ function KundenTab({
               reason: b.reason,
             }),
           ),
+        ),
+      )
+      .catch(() => {});
+    fetch("/api/admin/reviewlist")
+      .then((r) => r.json())
+      .then((d) =>
+        setReview(
+          (d.review ?? []).map((b: { email: string; reason: string }) => ({
+            email: b.email,
+            reason: b.reason,
+          })),
         ),
       )
       .catch(() => {});
@@ -3090,6 +3297,30 @@ function KundenTab({
   }, []);
 
   const blockedSet = new Set(blocked.map((b) => b.email));
+  const reviewSet = new Set(review.map((r) => r.email));
+
+  async function toggleReview(email: string, isOn: boolean) {
+    if (!email) return;
+    if (
+      !isOn &&
+      !window.confirm(
+        `Buchungen von ${email} künftig erst nach deiner Freigabe bestätigen? Der Termin wird reserviert, gilt aber erst, wenn du ihn im Tagesplan freigibst.`,
+      )
+    ) {
+      return;
+    }
+    setBlockBusy(true);
+    try {
+      await fetch("/api/admin/reviewlist", {
+        method: isOn ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      loadBlocklist();
+    } finally {
+      setBlockBusy(false);
+    }
+  }
 
   async function toggleBlock(email: string, isBlocked: boolean) {
     if (!email) return;
@@ -3236,6 +3467,11 @@ function KundenTab({
                           gesperrt
                         </span>
                       )}
+                      {c.email && reviewSet.has(c.email.toLowerCase()) && (
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
+                          Freigabe nötig
+                        </span>
+                      )}
                     </div>
                     {(c.phone || c.email) && (
                       <div className="mt-2 flex flex-wrap gap-3 text-sm">
@@ -3298,6 +3534,26 @@ function KundenTab({
                               : "Online-Buchung sperren"}
                           </button>
                         )}
+                        {c.email && !blockedSet.has(c.email.toLowerCase()) && (
+                          <button
+                            disabled={blockBusy}
+                            onClick={() =>
+                              toggleReview(
+                                c.email.toLowerCase(),
+                                reviewSet.has(c.email.toLowerCase()),
+                              )
+                            }
+                            className={`rounded-full px-4 py-2 text-xs font-semibold ring-1 disabled:opacity-50 ${
+                              reviewSet.has(c.email.toLowerCase())
+                                ? "bg-amber-50 text-amber-700 ring-amber-200"
+                                : "text-muted ring-line hover:text-amber-700 hover:ring-amber-300"
+                            }`}
+                          >
+                            {reviewSet.has(c.email.toLowerCase())
+                              ? "Freigabe-Pflicht aufheben"
+                              : "Nur mit Freigabe"}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -3309,6 +3565,40 @@ function KundenTab({
       )}
 
       <BroadcastCard />
+
+      <WinbackCard initialWeeks={winbackWeeks} />
+
+      {review.length > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+          <h3 className="text-sm font-semibold text-amber-800">
+            Buchung nur mit Freigabe ({review.length})
+          </h3>
+          <p className="mt-1 text-xs text-amber-700/80">
+            Buchungen dieser Adressen werden reserviert, gelten aber erst,
+            wenn du sie im Tagesplan freigibst.
+          </p>
+          <ul className="mt-3 flex flex-col gap-2">
+            {review.map((r) => (
+              <li
+                key={r.email}
+                className="flex items-center justify-between gap-3 rounded-lg bg-background px-3 py-2 text-sm ring-1 ring-amber-100"
+              >
+                <span className="min-w-0 truncate">
+                  {r.email}
+                  {r.reason && <span className="text-muted"> · {r.reason}</span>}
+                </span>
+                <button
+                  disabled={blockBusy}
+                  onClick={() => toggleReview(r.email, true)}
+                  className="shrink-0 text-xs text-muted underline underline-offset-4 hover:text-foreground disabled:opacity-50"
+                >
+                  Aufheben
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {blocked.length > 0 && (
         <section className="rounded-2xl border border-red-200 bg-red-50/40 p-4">
@@ -3343,6 +3633,67 @@ function KundenTab({
         </section>
       )}
     </div>
+  );
+}
+
+// Automatic win-back email: customers with no visit for N weeks (and no
+// upcoming appointment) get one "we miss you" mail per lapse, sent by the
+// daily cron. 0 = off.
+function WinbackCard({ initialWeeks }: { initialWeeks: number }) {
+  const [weeks, setWeeks] = useState(initialWeeks);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save(value: number) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ winbackWeeks: value }),
+      });
+      if (res.ok) {
+        setWeeks(value);
+        setMsg(value === 0 ? "Ausgeschaltet." : "Gespeichert.");
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setMsg(d.error ?? "Speichern fehlgeschlagen.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4">
+      <h3 className="text-sm font-semibold">💌 Rückhol-Mail</h3>
+      <p className="mt-1 text-xs text-muted">
+        Kunden, deren letzter Besuch länger her ist und die keinen neuen Termin
+        haben, bekommen automatisch einmalig „Zeit für einen frischen
+        Schnitt?“ mit Buchungslink (max. 20 pro Tag, mit Abmelde-Link).
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <select
+          value={weeks}
+          disabled={busy}
+          onChange={(e) => save(Number(e.target.value))}
+          className="rounded-lg border border-line bg-background px-2 py-2 text-sm"
+        >
+          <option value={0}>Aus</option>
+          <option value={4}>nach 4 Wochen</option>
+          <option value={6}>nach 6 Wochen</option>
+          <option value={8}>nach 8 Wochen</option>
+          <option value={12}>nach 12 Wochen</option>
+        </select>
+        {weeks > 0 && (
+          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+            aktiv
+          </span>
+        )}
+        {msg && <span className="text-xs text-muted">{msg}</span>}
+      </div>
+    </section>
   );
 }
 

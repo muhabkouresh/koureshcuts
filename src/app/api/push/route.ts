@@ -22,6 +22,8 @@ const subscribeSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  // Enables reminder pushes for this customer's booked appointments.
+  email: z.string().email().max(200).optional(),
 });
 
 // GET /api/push — VAPID public key for client-side subscription.
@@ -50,11 +52,12 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Ungültige Eingabe." }, { status: 400 });
   }
 
-  const { subscription, date } = parsed.data;
+  const { subscription, date, email } = parsed.data;
   // Noon keeps the instant safely inside the day across DST changes.
   const dateInstant = date
     ? zonedToUtc(date, 12 * 60, siteConfig.timezone)
     : null;
+  const emailKey = email?.trim().toLowerCase() ?? "";
 
   await prisma.customerPush.upsert({
     where: { endpoint: subscription.endpoint },
@@ -62,6 +65,7 @@ export async function POST(request: NextRequest) {
       p256dh: subscription.keys.p256dh,
       auth: subscription.keys.auth,
       date: dateInstant,
+      email: emailKey,
       notifiedAt: null,
     },
     create: {
@@ -69,6 +73,7 @@ export async function POST(request: NextRequest) {
       p256dh: subscription.keys.p256dh,
       auth: subscription.keys.auth,
       date: dateInstant,
+      email: emailKey,
     },
   });
 

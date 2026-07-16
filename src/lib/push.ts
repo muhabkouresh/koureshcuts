@@ -83,6 +83,50 @@ export async function sendCustomerPushForDay(
   }
 }
 
+/**
+ * Reminder push to every radar device registered with this customer email
+ * (set during waitlist push opt-in). Complements the reminder email. Never
+ * throws; expired endpoints are removed.
+ */
+export async function sendCustomerReminderPush(
+  email: string,
+  body: string,
+): Promise<void> {
+  if (!configured || !email) return;
+  try {
+    const subs = await prisma.customerPush.findMany({
+      where: { email: email.trim().toLowerCase() },
+    });
+    if (subs.length === 0) return;
+    const payload = JSON.stringify({
+      title: "Terminerinnerung 💈",
+      body,
+      url: "/meine-termine",
+    });
+    await Promise.all(
+      subs.map(async (s) => {
+        try {
+          await webpush.sendNotification(
+            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+            payload,
+          );
+        } catch (err) {
+          const status = (err as { statusCode?: number }).statusCode;
+          if (status === 404 || status === 410) {
+            await prisma.customerPush
+              .delete({ where: { id: s.id } })
+              .catch(() => {});
+          } else {
+            console.error("customer reminder push failed", err);
+          }
+        }
+      }),
+    );
+  } catch (err) {
+    console.error("customer reminder push failed", err);
+  }
+}
+
 /** Send a notification to every registered admin device. Never throws. */
 export async function sendAdminPush(title: string, body: string): Promise<void> {
   if (!configured) return;

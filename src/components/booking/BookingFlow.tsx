@@ -33,6 +33,8 @@ type BookingResult = {
   end: string;
   icsUrl: string;
   gcalUrl: string;
+  // True when the booking needs the owner's approval first (approval list).
+  pending?: boolean;
 };
 
 type Step = "service" | "datetime" | "details" | "done";
@@ -508,11 +510,24 @@ export default function BookingFlow({ services }: { services: Service[] }) {
             </svg>
           </div>
           <h2 className="mt-6 text-3xl font-bold tracking-tight">
-            Termin erfolgreich gebucht
+            {result.pending
+              ? "Anfrage gesendet"
+              : "Termin erfolgreich gebucht"}
           </h2>
           <p className="mt-3 text-muted">
-            Wir haben dir eine Bestätigungsmail an{" "}
-            <span className="font-medium text-foreground">{email}</span> gesendet.
+            {result.pending ? (
+              <>
+                Der Platz ist für dich reserviert — wir bestätigen deinen
+                Termin in Kürze per E-Mail an{" "}
+                <span className="font-medium text-foreground">{email}</span>.
+              </>
+            ) : (
+              <>
+                Wir haben dir eine Bestätigungsmail an{" "}
+                <span className="font-medium text-foreground">{email}</span>{" "}
+                gesendet.
+              </>
+            )}
           </p>
 
           <div className="mt-8 text-left">
@@ -556,7 +571,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
             </button>
           </div>
 
-          {service && (
+          {service && !result.pending && (
             <SecondSlotOffer
               service={service}
               firstEndIso={result.end}
@@ -798,8 +813,9 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 }
 
 // "Termin-Radar": after joining the waitlist, offer an instant push to this
-// device the moment a slot frees up — faster than the waitlist email.
-function PushOptIn({ date }: { date?: string }) {
+// device the moment a slot frees up — faster than the waitlist email. The
+// email (when known) also enables reminder pushes for booked appointments.
+function PushOptIn({ date, email }: { date?: string; email?: string }) {
   const [supported, setSupported] = useState(false);
   const [state, setState] = useState<"idle" | "busy" | "on" | "error">("idle");
 
@@ -839,7 +855,7 @@ function PushOptIn({ date }: { date?: string }) {
       const res = await fetch("/api/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON(), date }),
+        body: JSON.stringify({ subscription: sub.toJSON(), date, email }),
       });
       setState(res.ok ? "on" : "error");
     } catch {
@@ -919,7 +935,7 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
         ✓ Du stehst auf der Warteliste
         {position !== null ? ` (Platz ${position})` : ""}. Wir melden uns per
         E-Mail, sobald an diesem Tag ein Platz frei wird.
-        <PushOptIn date={date} />
+        <PushOptIn date={date} email={email} />
       </div>
     );
   }
@@ -1048,7 +1064,7 @@ function GeneralWaitlistBox({
         ✓ Du stehst auf der Warteliste
         {position !== null ? ` (Platz ${position})` : ""}. Wir melden uns per
         E-Mail, sobald ein passender Termin für dich frei wird.
-        <PushOptIn />
+        <PushOptIn email={email} />
       </div>
     );
   }

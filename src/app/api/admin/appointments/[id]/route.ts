@@ -2,7 +2,7 @@ import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { appointmentActionSchema } from "@/lib/validation";
 import { notifyWaitlistForDay } from "@/lib/waitlist";
-import { sendShopCancellationEmail } from "@/lib/email";
+import { sendShopCancellationEmail, sendConfirmationEmails } from "@/lib/email";
 
 // PATCH /api/admin/appointments/[id] — update an appointment's status
 // (e.g. CANCELLED, COMPLETED, CONFIRMED). When cancelling with notify=true,
@@ -55,6 +55,31 @@ export async function PATCH(
   });
 
   let notified = false;
+
+  // Approving a pending booking (approval list): now send the customer the
+  // real confirmation with calendar links.
+  if (
+    parsed.data.status === "CONFIRMED" &&
+    existing.status === "PENDING" &&
+    existing.customerEmail &&
+    existing.startTime > new Date()
+  ) {
+    try {
+      await sendConfirmationEmails({
+        id: existing.id,
+        customerName: existing.customerName,
+        customerEmail: existing.customerEmail,
+        serviceName: existing.service.name,
+        priceCents: existing.service.priceCents,
+        start: existing.startTime,
+        end: existing.endTime,
+      });
+      notified = true;
+    } catch (err) {
+      console.error("approval confirmation email failed", err);
+    }
+  }
+
   if (cancelling) {
     // Tell the customer the shop cancelled (only when asked to and possible).
     if (parsed.data.notify && existing.customerEmail) {

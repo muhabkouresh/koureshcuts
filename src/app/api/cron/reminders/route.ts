@@ -1,8 +1,12 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { siteConfig } from "@/config/site";
 import { ACTIVE_STATUSES } from "@/lib/constants";
 import { sendReminderEmail } from "@/lib/email";
 import { getSettings } from "@/lib/settings";
+import { runWinback } from "@/lib/winback";
+import { sendCustomerReminderPush } from "@/lib/push";
+import { formatDateTimeLabel } from "@/lib/time";
 
 // GET /api/cron/reminders — invoked daily by Vercel Cron. Sends a reminder
 // email for every active appointment starting within the next 24 hours that
@@ -24,23 +28,35 @@ export async function GET(request: NextRequest) {
   const cleanedFlex = await prisma.waitlistEntry.deleteMany({
     where: { date: null, createdAt: { lt: new Date(nowTs - 90 * 24 * 60 * 60_000) } },
   });
-  // Same hygiene for "Termin-Radar" push devices.
+  // Same hygiene for "Termin-Radar" push devices. Devices with a known email
+  // stay 90 days regardless of their watched day — they double as reminder-
+  // push targets; anonymous day-watchers go 7 days after their day passed.
   await prisma.customerPush.deleteMany({
     where: {
       OR: [
-        { date: { lt: new Date(nowTs - 7 * 24 * 60 * 60_000) } },
-        { date: null, createdAt: { lt: new Date(nowTs - 90 * 24 * 60 * 60_000) } },
+        { email: "", date: { lt: new Date(nowTs - 7 * 24 * 60 * 60_000) } },
+        { createdAt: { lt: new Date(nowTs - 90 * 24 * 60 * 60_000) } },
       ],
     },
   });
 
   const settings = await getSettings();
+
+  // Win-back: one "we miss you" mail per lapsed customer (see lib/winback).
+  let winbackSent = 0;
+  try {
+    winbackSent = await runWinback(settings.winbackWeeks);
+  } catch (err) {
+    console.error("winback run failed", err);
+  }
+
   if (!settings.reminderEnabled) {
     return Response.json({
       ok: true,
       disabled: true,
       considered: 0,
       sent: 0,
+      winbackSent,
       waitlistCleaned: cleanedDay.count + cleanedFlex.count,
     });
   }
@@ -78,6 +94,11 @@ export async function GET(request: NextRequest) {
         data: { reminderSentAt: new Date() },
       });
       sent++;
+      // Bonus reminder as push for radar devices tied to this email.
+      await sendCustomerReminderPush(
+        appt.customerEmail,
+        `${appt.service.name} — ${formatDateTimeLabel(appt.startTime, siteConfig.timezone)}. Bis dann!`,
+      );
     } catch (err) {
       console.error(`reminder failed for ${appt.id}`, err);
     }
@@ -87,6 +108,7 @@ export async function GET(request: NextRequest) {
     ok: true,
     considered: due.length,
     sent,
+    winbackSent,
     waitlistCleaned: cleanedDay.count + cleanedFlex.count,
   });
 }

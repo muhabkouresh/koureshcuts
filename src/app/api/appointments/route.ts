@@ -11,7 +11,7 @@ import {
 import { getSettings } from "@/lib/settings";
 import { createAppointmentSchema } from "@/lib/validation";
 import { getAvailability } from "@/lib/availability";
-import { sendConfirmationEmails } from "@/lib/email";
+import { sendConfirmationEmails, sendBookingRequestEmail } from "@/lib/email";
 import { googleCalendarUrl } from "@/lib/calendar";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendAdminPush } from "@/lib/push";
@@ -63,6 +63,15 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     );
   }
+
+  // Approval list: booking goes through, but PENDING until the owner
+  // confirms it manually (softer than the full block).
+  const needsApproval = Boolean(
+    await prisma.reviewCustomer.findUnique({
+      where: { email: input.customerEmail.toLowerCase() },
+      select: { id: true },
+    }),
+  );
 
   const settings = await getSettings();
 
@@ -163,7 +172,9 @@ export async function POST(request: NextRequest) {
                 notes: input.notes ?? "",
                 startTime: start,
                 endTime: end,
-                status: AppointmentStatus.CONFIRMED,
+                status: needsApproval
+                  ? AppointmentStatus.PENDING
+                  : AppointmentStatus.CONFIRMED,
               },
               select: { id: true },
             });
@@ -199,16 +210,21 @@ export async function POST(request: NextRequest) {
   }
 
   // Send confirmation emails; never fail the booking if email delivery hiccups.
+  const emailData = {
+    id: appointmentId,
+    customerName: input.customerName,
+    customerEmail: input.customerEmail,
+    serviceName: service.name,
+    priceCents: service.priceCents,
+    start,
+    end,
+  };
   try {
-    await sendConfirmationEmails({
-      id: appointmentId,
-      customerName: input.customerName,
-      customerEmail: input.customerEmail,
-      serviceName: service.name,
-      priceCents: service.priceCents,
-      start,
-      end,
-    });
+    if (needsApproval) {
+      await sendBookingRequestEmail(emailData);
+    } else {
+      await sendConfirmationEmails(emailData);
+    }
   } catch (err) {
     console.error("confirmation email failed", err);
   }
@@ -216,7 +232,7 @@ export async function POST(request: NextRequest) {
   // Push to the admin PWA (best-effort).
   try {
     await sendAdminPush(
-      "Neue Buchung",
+      needsApproval ? "Termin wartet auf deine Freigabe" : "Neue Buchung",
       `${input.customerName} — ${service.name}, ${formatDateTimeLabel(start, siteConfig.timezone)}`,
     );
   } catch (err) {
@@ -240,6 +256,7 @@ export async function POST(request: NextRequest) {
       end: end.toISOString(),
       icsUrl: `/api/appointments/${appointmentId}/ics`,
       gcalUrl,
+      pending: needsApproval,
     },
     { status: 201 },
   );

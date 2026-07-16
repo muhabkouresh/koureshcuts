@@ -418,6 +418,80 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/** Personal unsubscribe link for marketing-style emails (broadcast, winback). */
+function unsubscribeUrlFor(email: string): string {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const e = Buffer.from(email.trim().toLowerCase()).toString("base64url");
+  return `${siteUrl}/news/abmelden?e=${e}&t=${emailToken(email)}`;
+}
+
+/**
+ * Automatic "we miss you" mail to customers whose last visit is a while back
+ * (see winbackWeeks setting + WinbackLog). Marketing-style: carries the same
+ * unsubscribe link as broadcasts.
+ */
+export async function sendWinbackEmail(
+  customerName: string,
+  customerEmail: string,
+): Promise<{ ok: boolean }> {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const unsubscribeUrl = unsubscribeUrlFor(customerEmail);
+  const html = layout(
+    "",
+    `<div style="text-align:center">
+       <div style="font-size:44px;margin:8px 0 14px">💈</div>
+       <h2 style="margin:0;font-size:21px;font-weight:700">Zeit für einen frischen Schnitt?</h2>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${customerName},<br/>
+       dein letzter Besuch bei uns ist schon eine Weile her — dein Barber vermisst dich!
+       Sichere dir jetzt wieder einen Termin, bevor die besten Zeiten weg sind.</p>
+     </div>
+     <div style="margin:24px 0 4px;text-align:center">
+       <a href="${siteUrl}/#book" style="display:inline-block;background:#8a1f2b;color:#fff;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700">Jetzt Termin buchen</a>
+     </div>
+     <hr style="border:none;border-top:1px solid #eee;margin:24px 0 14px"/>
+     <p style="font-size:12px;color:#999;margin:0;text-align:center">
+       Du erhältst diese E-Mail, weil du Kunde bei ${siteConfig.name} bist.<br/>
+       <a href="${unsubscribeUrl}" style="color:#999;text-decoration:underline">Keine solchen E-Mails mehr erhalten</a>
+     </p>`,
+  );
+  return send({
+    to: customerEmail,
+    subject: `Zeit für einen frischen Schnitt, ${customerName}? 💈`,
+    html,
+  });
+}
+
+/**
+ * Booking request received (approval-list customers): the slot is reserved
+ * but PENDING — the owner confirms it manually. No calendar links yet; those
+ * arrive with the real confirmation.
+ */
+export async function sendBookingRequestEmail(
+  data: BookingEmailData,
+): Promise<void> {
+  if (!data.customerEmail) return;
+  const html = layout(
+    "",
+    `<div style="text-align:center">
+       <div style="width:56px;height:56px;border-radius:50%;background:#b45309;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">⏳</div>
+       <h2 style="margin:0;font-size:21px;font-weight:700">Deine Anfrage ist eingegangen</h2>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       wir haben deine Terminanfrage erhalten und den Platz für dich reserviert.
+       Sobald wir sie bestätigt haben, bekommst du die endgültige Bestätigung per E-Mail.</p>
+     </div>
+     <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
+     ${detailsTable(data)}
+     <div style="margin:16px 0 0;text-align:center">
+       <a href="${cancelUrl(data.id)}" style="font-size:13px;color:#888;text-decoration:underline">Anfrage zurückziehen</a>
+     </div>`,
+  );
+  await send({
+    to: data.customerEmail,
+    subject: `Anfrage erhalten: ${data.serviceName} — ${formatDateTimeLabel(data.start, siteConfig.timezone)}`,
+    html,
+  });
+}
+
 /**
  * Owner-composed broadcast ("Rundmail") to many customers — news, vacation
  * announcements etc. Sent via Resend's batch API in chunks of 100; every mail
@@ -429,12 +503,10 @@ export async function sendBroadcastEmails(
   subject: string,
   message: string,
 ): Promise<{ sent: number; failed: number }> {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   const bodyHtml = `<p style="font-size:14px;color:#333;line-height:1.7;white-space:pre-wrap;margin:0">${escapeHtml(message.trim())}</p>`;
 
   const payloads = recipients.map((email) => {
-    const e = Buffer.from(email.trim().toLowerCase()).toString("base64url");
-    const unsubscribeUrl = `${siteUrl}/news/abmelden?e=${e}&t=${emailToken(email)}`;
+    const unsubscribeUrl = unsubscribeUrlFor(email);
     return {
       from: FROM,
       to: email,

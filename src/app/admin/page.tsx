@@ -77,6 +77,7 @@ export default async function AdminPage() {
     cancelDeadlineHours: settings.cancelDeadlineHours,
     maxActiveBookingsPerEmail: settings.maxActiveBookingsPerEmail,
     noShowBlockThreshold: settings.noShowBlockThreshold,
+    winbackWeeks: settings.winbackWeeks,
     revenue,
     services,
     appointments: appointments.map((a) => ({
