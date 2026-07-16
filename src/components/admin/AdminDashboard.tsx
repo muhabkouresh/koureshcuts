@@ -737,9 +737,10 @@ function StoryCard({ services }: { services: Service[] }) {
       const shown = days.slice(0, 6);
       for (const day of shown) {
         const label = formatDateLabel(zonedToUtc(day.ds, 12 * 60, tz), tz);
+        // Max 3 times per row — keeps the 42px line safely inside the card.
         const times =
-          day.times.slice(0, 4).join("  ·  ") +
-          (day.times.length > 4 ? `   +${day.times.length - 4} weitere` : "");
+          day.times.slice(0, 3).join(" · ") +
+          (day.times.length > 3 ? `  +${day.times.length - 3} weitere` : "");
         ctx.fillStyle = "rgba(255,255,255,0.10)";
         ctx.beginPath();
         ctx.roundRect(90, y, W - 180, 150, 28);
