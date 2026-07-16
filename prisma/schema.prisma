@@ -151,6 +151,22 @@ model PushSubscription {
   createdAt DateTime @default(now())
 }
 
+/// A customer device watching for freed slots ("Termin-Radar"). `date` set =
+/// watching one specific day; null = any day. Day watchers are pushed at most
+/// once (notifiedAt), flexible watchers at most once per 24h. Stale rows are
+/// removed by the daily cron.
+model CustomerPush {
+  id         String    @id @default(cuid())
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  date       DateTime?
+  notifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([date])
+}
+
 /// A customer waiting for a spot. `date` set = waiting for that specific day
 /// (start-of-day UTC for the shop timezone); `date` null = flexible entry
 /// ("next free slot"), optionally restricted to `weekdays` (CSV of

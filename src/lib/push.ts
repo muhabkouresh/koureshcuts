@@ -28,6 +28,61 @@ if (publicKey && privateKey) {
 export const vapidPublicKey = configured ? publicKey : "";
 export const pushConfigured = configured;
 
+/**
+ * "Termin-Radar": push to customer devices watching a freed day. Day-specific
+ * watchers get exactly one push (then notifiedAt blocks repeats); flexible
+ * watchers (date null) at most one per 24 hours. Expired endpoints are
+ * removed. Never throws.
+ */
+export async function sendCustomerPushForDay(
+  dayStart: Date,
+  dayEnd: Date,
+  dayLabel: string,
+): Promise<void> {
+  if (!configured) return;
+  try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60_000);
+    const subs = await prisma.customerPush.findMany({
+      where: {
+        OR: [
+          { date: { gte: dayStart, lt: dayEnd }, notifiedAt: null },
+          { date: null, notifiedAt: null },
+          { date: null, notifiedAt: { lt: cutoff } },
+        ],
+      },
+    });
+    const payload = JSON.stringify({
+      title: "Termin frei geworden! ⚡",
+      body: `Am ${dayLabel} ist gerade ein Termin frei geworden — wer zuerst bucht, bekommt ihn.`,
+      url: "/",
+    });
+    await Promise.all(
+      subs.map(async (s) => {
+        try {
+          await webpush.sendNotification(
+            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+            payload,
+          );
+          await prisma.customerPush
+            .update({ where: { id: s.id }, data: { notifiedAt: new Date() } })
+            .catch(() => {});
+        } catch (err) {
+          const status = (err as { statusCode?: number }).statusCode;
+          if (status === 404 || status === 410) {
+            await prisma.customerPush
+              .delete({ where: { id: s.id } })
+              .catch(() => {});
+          } else {
+            console.error("customer push failed", err);
+          }
+        }
+      }),
+    );
+  } catch (err) {
+    console.error("customer push failed", err);
+  }
+}
+
 /** Send a notification to every registered admin device. Never throws. */
 export async function sendAdminPush(title: string, body: string): Promise<void> {
   if (!configured) return;

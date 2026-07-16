@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { priceShort, priceFull } from "@/lib/format";
@@ -630,8 +630,214 @@ function TermineTab({
         </button>
       </div>
 
+      <StoryCard services={services} />
+
       {feedUrl && <FeedBox feedUrl={feedUrl} />}
     </div>
+  );
+}
+
+// Instagram-story generator: renders the week's free slots (or a "fully
+// booked" variant) onto a 1080×1920 canvas in brand colors, ready to download
+// and post. Everything happens client-side.
+function StoryCard({ services }: { services: Service[] }) {
+  const [open, setOpen] = useState(false);
+  const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  async function generate() {
+    setBusy(true);
+    setError(null);
+    setReady(false);
+    try {
+      const start = todayInTz(tz);
+      const days = Array.from({ length: 7 }, (_, i) =>
+        addDaysToDateStr(start, i),
+      );
+      const results = await Promise.all(
+        days.map(async (ds) => {
+          try {
+            const d = await fetch(
+              `/api/availability?serviceId=${serviceId}&date=${ds}`,
+            ).then((r) => r.json());
+            const times: string[] = (d.slots ?? []).map((s: { start: string }) =>
+              formatClock(new Date(s.start), tz),
+            );
+            return { ds, times };
+          } catch {
+            return { ds, times: [] as string[] };
+          }
+        }),
+      );
+      const withSlots = results.filter((r) => r.times.length > 0);
+      draw(withSlots);
+      setReady(true);
+    } catch {
+      setError("Bild konnte nicht erstellt werden.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function draw(days: { ds: string; times: string[] }[]) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const W = 1080;
+    const H = 1920;
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const FONT = '"Segoe UI", system-ui, -apple-system, sans-serif';
+
+    // Brand-red vertical gradient with a soft vignette circle.
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, "#7d1c27");
+    grad.addColorStop(1, "#380c12");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    ctx.beginPath();
+    ctx.arc(W, 120, 420, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, H - 160, 360, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `600 52px ${FONT}`;
+    ctx.fillText("✂", W / 2, 200);
+    ctx.font = `700 72px ${FONT}`;
+    ctx.fillText(siteConfig.name, W / 2, 300);
+
+    const booked = days.length === 0;
+    ctx.font = `800 116px ${FONT}`;
+    ctx.fillText(booked ? "AUSGEBUCHT" : "FREIE TERMINE", W / 2, 520);
+    ctx.font = `400 52px ${FONT}`;
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillText(
+      booked ? "diese Woche — aber:" : "die nächsten 7 Tage",
+      W / 2,
+      600,
+    );
+
+    if (booked) {
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `600 56px ${FONT}`;
+      ctx.fillText("Trag dich auf die Warteliste ein —", W / 2, 860);
+      ctx.fillText("du bekommst sofort Bescheid,", W / 2, 950);
+      ctx.fillText("wenn ein Platz frei wird! 🔔", W / 2, 1040);
+    } else {
+      // One rounded card per day with up to 4 times (+N weitere).
+      let y = 720;
+      const shown = days.slice(0, 6);
+      for (const day of shown) {
+        const label = formatDateLabel(zonedToUtc(day.ds, 12 * 60, tz), tz);
+        const times =
+          day.times.slice(0, 4).join("  ·  ") +
+          (day.times.length > 4 ? `   +${day.times.length - 4} weitere` : "");
+        ctx.fillStyle = "rgba(255,255,255,0.10)";
+        ctx.beginPath();
+        ctx.roundRect(90, y, W - 180, 150, 28);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "left";
+        ctx.font = `700 46px ${FONT}`;
+        ctx.fillText(label, 130, y + 62);
+        ctx.font = `400 42px ${FONT}`;
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.fillText(times, 130, y + 122);
+        ctx.textAlign = "center";
+        y += 178;
+      }
+    }
+
+    // CTA pill.
+    const pillY = 1660;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 330, pillY, 660, 110, 55);
+    ctx.fill();
+    ctx.fillStyle = "#7d1c27";
+    ctx.font = `700 46px ${FONT}`;
+    ctx.fillText(
+      booked ? "koureshcuts.de" : "Jetzt buchen: koureshcuts.de",
+      W / 2,
+      pillY + 72,
+    );
+  }
+
+  function download() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `story-${todayInTz(tz)}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }, "image/png");
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="text-sm font-semibold">📸 Instagram-Story erstellen</span>
+        <span className="text-muted">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="mt-3">
+          <p className="text-xs text-muted">
+            Erzeugt ein fertiges Story-Bild (1080 × 1920) mit den freien
+            Terminen der nächsten 7 Tage — herunterladen und direkt in deine
+            Instagram-Story posten. Sind alle Termine weg, entsteht eine
+            „Ausgebucht — Warteliste“-Story.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <select
+              value={serviceId}
+              onChange={(e) => setServiceId(e.target.value)}
+              className="rounded-lg border border-line bg-background px-2 py-2 text-sm"
+            >
+              {services.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={busy || !serviceId}
+              onClick={generate}
+              className="rounded-lg bg-brand px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {busy ? "Lädt freie Termine…" : "Story-Bild erstellen"}
+            </button>
+            {ready && (
+              <button
+                onClick={download}
+                className="rounded-lg bg-foreground px-4 py-2 text-xs font-semibold text-background"
+              >
+                ⬇ Bild herunterladen
+              </button>
+            )}
+            {error && <span className="text-xs text-red-600">{error}</span>}
+          </div>
+          <canvas
+            ref={canvasRef}
+            className={`mt-3 w-48 rounded-xl ring-1 ring-line ${ready ? "" : "hidden"}`}
+          />
+        </div>
+      )}
+    </section>
   );
 }
 

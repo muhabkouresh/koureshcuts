@@ -82,7 +82,8 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-// Web-Push for the admin PWA: show incoming booking/cancellation notifications.
+// Web-Push: admin notifications (new bookings etc., default target /admin)
+// and customer "Termin-Radar" alerts (payload carries url: "/").
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -95,7 +96,7 @@ self.addEventListener("push", (event) => {
       body: data.body || "",
       icon: "/icon-192.png",
       badge: "/icon-192.png",
-      data: { url: "/admin" },
+      data: { url: data.url || "/admin" },
     }),
   );
 });
@@ -105,7 +106,9 @@ self.addEventListener("notificationclick", (event) => {
   const url = (event.notification.data && event.notification.data.url) || "/admin";
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
-      const existing = wins.find((w) => w.url.includes("/admin"));
+      const existing = wins.find((w) =>
+        url === "/" ? true : w.url.includes(url),
+      );
       if (existing) return existing.focus();
       return clients.openWindow(url);
     }),

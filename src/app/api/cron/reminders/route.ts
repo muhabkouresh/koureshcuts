@@ -24,6 +24,15 @@ export async function GET(request: NextRequest) {
   const cleanedFlex = await prisma.waitlistEntry.deleteMany({
     where: { date: null, createdAt: { lt: new Date(nowTs - 90 * 24 * 60 * 60_000) } },
   });
+  // Same hygiene for "Termin-Radar" push devices.
+  await prisma.customerPush.deleteMany({
+    where: {
+      OR: [
+        { date: { lt: new Date(nowTs - 7 * 24 * 60 * 60_000) } },
+        { date: null, createdAt: { lt: new Date(nowTs - 90 * 24 * 60 * 60_000) } },
+      ],
+    },
+  });
 
   const settings = await getSettings();
   if (!settings.reminderEnabled) {

@@ -786,6 +786,95 @@ function Steps({ current }: { current: Step }) {
 }
 
 // Shown when a chosen day is fully booked — lets the customer join a waitlist.
+// Web-Push payloads need the VAPID public key as a Uint8Array (backed by a
+// plain ArrayBuffer so it satisfies the DOM BufferSource type).
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const out = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+// "Termin-Radar": after joining the waitlist, offer an instant push to this
+// device the moment a slot frees up — faster than the waitlist email.
+function PushOptIn({ date }: { date?: string }) {
+  const [supported, setSupported] = useState(false);
+  const [state, setState] = useState<"idle" | "busy" | "on" | "error">("idle");
+
+  /* eslint-disable react-hooks/set-state-in-effect -- one-time client-only feature detection (browser APIs unavailable during SSR) */
+  useEffect(() => {
+    setSupported(
+      typeof window !== "undefined" &&
+        "serviceWorker" in navigator &&
+        "PushManager" in window &&
+        "Notification" in window,
+    );
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  if (!supported) return null;
+
+  async function enable() {
+    setState("busy");
+    try {
+      const conf = await fetch("/api/push").then((r) => r.json());
+      if (!conf.enabled || !conf.publicKey) {
+        setState("error");
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setState("error");
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub =
+        (await reg.pushManager.getSubscription()) ??
+        (await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(conf.publicKey),
+        }));
+      const res = await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub.toJSON(), date }),
+      });
+      setState(res.ok ? "on" : "error");
+    } catch {
+      setState("error");
+    }
+  }
+
+  if (state === "on") {
+    return (
+      <p className="mt-2 text-xs font-medium text-brand-700">
+        🔔 Termin-Radar aktiv — du bekommst sofort eine Push-Nachricht auf
+        diesem Gerät, wenn etwas frei wird.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        disabled={state === "busy"}
+        onClick={enable}
+        className="rounded-full bg-background px-4 py-2 text-xs font-semibold ring-1 ring-line transition-colors hover:ring-brand disabled:opacity-50"
+      >
+        {state === "busy" ? "…" : "🔔 Zusätzlich Sofort-Push aufs Handy"}
+      </button>
+      {state === "error" && (
+        <p className="mt-1.5 text-xs text-muted">
+          Push konnte nicht aktiviert werden — die E-Mail-Benachrichtigung
+          funktioniert trotzdem.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -830,6 +919,7 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
         ✓ Du stehst auf der Warteliste
         {position !== null ? ` (Platz ${position})` : ""}. Wir melden uns per
         E-Mail, sobald an diesem Tag ein Platz frei wird.
+        <PushOptIn date={date} />
       </div>
     );
   }
@@ -958,6 +1048,7 @@ function GeneralWaitlistBox({
         ✓ Du stehst auf der Warteliste
         {position !== null ? ` (Platz ${position})` : ""}. Wir melden uns per
         E-Mail, sobald ein passender Termin für dich frei wird.
+        <PushOptIn />
       </div>
     );
   }
