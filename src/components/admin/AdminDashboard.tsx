@@ -40,6 +40,8 @@ type Appointment = {
   status: string;
   start: string;
   end: string;
+  // No-show history of this customer (risk badge on upcoming appointments).
+  riskNoShows: number;
 };
 
 type DayHours = {
@@ -153,7 +155,13 @@ export default function AdminDashboard({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<
-    "termine" | "kunden" | "umsatz" | "services" | "verfuegbarkeit" | "verspaetungen"
+    | "termine"
+    | "kunden"
+    | "umsatz"
+    | "statistik"
+    | "services"
+    | "verfuegbarkeit"
+    | "verspaetungen"
   >("termine");
   // Global search can jump into a tab with a preselected date/customer; a
   // bumped key remounts the tab so its internal state picks the target up.
@@ -231,6 +239,7 @@ export default function AdminDashboard({
             ["termine", "Termine"],
             ["kunden", "Kunden"],
             ["umsatz", "Umsatz"],
+            ["statistik", "Statistik"],
             ["services", "Services"],
             ["verfuegbarkeit", "Verfügbarkeit"],
             ["verspaetungen", "Verspätungen"],
@@ -276,6 +285,7 @@ export default function AdminDashboard({
         />
       )}
       {tab === "umsatz" && <UmsatzTab revenue={data.revenue} />}
+      {tab === "statistik" && <StatistikTab />}
       {tab === "services" && <ServicesTab onChange={() => router.refresh()} />}
       {tab === "verfuegbarkeit" && (
         <Availability
@@ -2341,6 +2351,14 @@ function AgendaCard({
             </span>
           </span>
           <span className="shrink-0 text-right text-sm font-semibold">
+            {!cancelled && !isPast && a.riskNoShows > 0 && (
+              <span
+                className="mr-1"
+                title={`Schon ${a.riskNoShows}× nicht erschienen`}
+              >
+                ⚠️
+              </span>
+            )}
             {a.customerName}
             {a.status !== "CONFIRMED" && (
               <span
@@ -2373,6 +2391,11 @@ function AgendaCard({
             )}
           </p>
           {a.notes && <p className="mt-1 text-muted">Notiz: {a.notes}</p>}
+          {!cancelled && !isPast && a.riskNoShows > 0 && (
+            <p className="mt-2 inline-block rounded-full bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700">
+              ⚠️ Schon {a.riskNoShows}× nicht erschienen — No-Show-Risiko
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
             {a.status === "PENDING" && !isPast && (
               <button
@@ -2791,13 +2814,28 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
       <p className="text-xs text-muted">
         Umsatz aus wahrgenommenen Terminen (alle vergangenen, nicht stornierten).
       </p>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <RevenueStat label="Diese Woche" value={priceFull(revenue.thisWeekCents)} />
         <RevenueStat
           label="Dieser Monat"
           value={priceFull(revenue.thisMonthCents)}
         />
         <RevenueStat label="Gesamt" value={priceFull(revenue.totalCents)} />
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+            Voraussichtlich
+          </p>
+          <p className="mt-1 text-xl font-bold text-emerald-700">
+            {priceFull(revenue.expectedCents)}
+          </p>
+          <p className="mt-0.5 text-[11px] text-emerald-700/80">
+            {revenue.expectedCount}{" "}
+            {revenue.expectedCount === 1
+              ? "gebuchter Termin"
+              : "gebuchte Termine"}{" "}
+            stehen noch aus
+          </p>
+        </div>
       </div>
       <BarChart title="Pro Woche" data={revenue.weeks} />
       <BarChart title="Pro Monat" data={revenue.months} />
@@ -2821,13 +2859,205 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
   );
 }
 
-function RevenueStat({ label, value }: { label: string; value: string }) {
+/* --------------------------------- Statistik -------------------------------- */
+
+type SiteStats = {
+  today: { views: number; visitors: number };
+  week: { views: number; visitors: number };
+  month: { views: number; visitors: number };
+  daily: { day: string; views: number; visitors: number }[];
+  topPaths: { label: string; count: number }[];
+  topReferrers: { label: string; count: number }[];
+  devices: { label: string; count: number }[];
+  bookings: { week: number; month: number };
+};
+
+const PATH_LABELS: Record<string, string> = {
+  "/": "Startseite",
+  "/meine-termine": "Meine Termine",
+  "/meine-termine/liste": "Meine Termine (Liste)",
+  "/datenschutz": "Datenschutz",
+  "/news/abmelden": "News-Abmeldung",
+};
+
+// Visitor analytics from the site's own privacy-light beacon: daily chart,
+// totals, top pages, sources, devices, and booking conversion.
+function StatistikTab() {
+  const [stats, setStats] = useState<SiteStats | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/stats")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setStats(d);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (failed) {
+    return (
+      <p className="mt-6 text-sm text-muted">
+        Statistik konnte nicht geladen werden.
+      </p>
+    );
+  }
+  if (!stats) {
+    return <p className="mt-6 text-sm text-muted">Lädt…</p>;
+  }
+
+  const conversion =
+    stats.month.visitors > 0
+      ? Math.round((stats.bookings.month / stats.month.visitors) * 100)
+      : 0;
+  const maxDaily = Math.max(1, ...stats.daily.map((d) => d.views));
+  const deviceTotal = stats.devices.reduce((s, d) => s + d.count, 0);
+
+  return (
+    <div className="mt-6 flex flex-col gap-6">
+      <p className="text-xs text-muted">
+        Eigene, cookie-freie Zählung direkt auf der Website (ohne Bots, ohne
+        Admin-Aufrufe). Die Zählung läuft seit dem heutigen Update — die Kurve
+        füllt sich Tag für Tag.
+      </p>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <RevenueStat
+          label="Heute"
+          value={`${stats.today.visitors}`}
+          sub={`${stats.today.views} Aufrufe`}
+        />
+        <RevenueStat
+          label="7 Tage"
+          value={`${stats.week.visitors}`}
+          sub={`${stats.week.views} Aufrufe`}
+        />
+        <RevenueStat
+          label="30 Tage"
+          value={`${stats.month.visitors}`}
+          sub={`${stats.month.views} Aufrufe`}
+        />
+        <RevenueStat
+          label="Buchungsquote"
+          value={`${conversion} %`}
+          sub={`${stats.bookings.month} Buchungen / 30 Tage`}
+        />
+      </div>
+
+      <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+        <h2 className="text-sm font-semibold">Besucher pro Tag (30 Tage)</h2>
+        <div className="mt-4 flex items-end gap-[3px]" style={{ height: "150px" }}>
+          {stats.daily.map((d) => {
+            const h =
+              d.views > 0
+                ? Math.max(6, Math.round((d.views / maxDaily) * 120))
+                : 2;
+            return (
+              <div
+                key={d.day}
+                className="group relative flex-1 rounded-t bg-brand/70 transition-colors hover:bg-brand"
+                style={{ height: `${h}px` }}
+                title={`${formatDateLabel(new Date(`${d.day}T12:00:00Z`), "UTC")}: ${d.visitors} Besucher · ${d.views} Aufrufe`}
+              />
+            );
+          })}
+        </div>
+        <div className="mt-1 flex justify-between text-[10px] text-muted">
+          <span>vor 30 Tagen</span>
+          <span>heute</span>
+        </div>
+      </section>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+          <h2 className="text-sm font-semibold">Meistbesuchte Seiten</h2>
+          {stats.topPaths.length === 0 ? (
+            <p className="mt-2 text-xs text-muted">Noch keine Daten.</p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-2 text-sm">
+              {stats.topPaths.map((p) => (
+                <li key={p.label} className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 truncate">
+                    {PATH_LABELS[p.label] ?? p.label}
+                  </span>
+                  <span className="shrink-0 font-semibold">{p.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+          <h2 className="text-sm font-semibold">Woher die Besucher kommen</h2>
+          {stats.topReferrers.length === 0 ? (
+            <p className="mt-2 text-xs text-muted">
+              Noch keine Daten — Direktaufrufe (Link/App/Lesezeichen) tauchen
+              hier nicht auf, nur verweisende Seiten wie Instagram oder Google.
+            </p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-2 text-sm">
+              {stats.topReferrers.map((r) => (
+                <li key={r.label} className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 truncate">{r.label}</span>
+                  <span className="shrink-0 font-semibold">{r.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      {deviceTotal > 0 && (
+        <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+          <h2 className="text-sm font-semibold">Geräte</h2>
+          <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-surface">
+            {stats.devices.map((d, i) => (
+              <div
+                key={d.label}
+                className={i === 0 ? "bg-brand" : "bg-blue-900"}
+                style={{ width: `${(d.count / deviceTotal) * 100}%` }}
+                title={`${d.label}: ${d.count}`}
+              />
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted">
+            {stats.devices.map((d, i) => (
+              <span key={d.label} className="flex items-center gap-1.5">
+                <span
+                  className={`h-2 w-2 rounded-full ${i === 0 ? "bg-brand" : "bg-blue-900"}`}
+                />
+                {d.label}: {Math.round((d.count / deviceTotal) * 100)} %
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function RevenueStat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
   return (
     <div className="rounded-2xl border border-line bg-background p-4 shadow-soft">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
         {label}
       </p>
       <p className="mt-1 text-xl font-bold text-brand">{value}</p>
+      {sub && <p className="mt-0.5 text-[11px] text-muted">{sub}</p>}
     </div>
   );
 }

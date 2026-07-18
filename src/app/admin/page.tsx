@@ -27,6 +27,7 @@ export default async function AdminPage() {
     settings,
     revenue,
     waitlist,
+    noShowGroups,
   ] = await Promise.all([
       prisma.appointment.findMany({
         where: { startTime: { gte: from, lte: to } },
@@ -61,7 +62,21 @@ export default async function AdminPage() {
         include: { service: { select: { name: true } } },
         take: 500,
       }),
+      // No-show history per email — powers the risk badge on upcoming
+      // appointments in the day plan.
+      prisma.appointment.groupBy({
+        by: ["customerEmail"],
+        where: { status: "NO_SHOW", customerEmail: { not: "" } },
+        _count: { _all: true },
+      }),
     ]);
+
+  // Sum per lowercased email — the same customer may appear in mixed case.
+  const noShowByEmail = new Map<string, number>();
+  for (const g of noShowGroups) {
+    const key = g.customerEmail.toLowerCase();
+    noShowByEmail.set(key, (noShowByEmail.get(key) ?? 0) + g._count._all);
+  }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   const feedToken = process.env.ICS_FEED_TOKEN || "";
@@ -91,6 +106,9 @@ export default async function AdminPage() {
       status: a.status,
       start: a.startTime.toISOString(),
       end: a.endTime.toISOString(),
+      riskNoShows: a.customerEmail
+        ? (noShowByEmail.get(a.customerEmail.toLowerCase()) ?? 0)
+        : 0,
     })),
     hours: hoursRows.map((h) => ({
       dayOfWeek: h.dayOfWeek,

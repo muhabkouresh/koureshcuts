@@ -39,6 +39,10 @@ export async function GET(request: NextRequest) {
       ],
     },
   });
+  // Visitor stats keep a rolling ~13 months of history.
+  await prisma.pageView.deleteMany({
+    where: { createdAt: { lt: new Date(nowTs - 400 * 24 * 60 * 60_000) } },
+  });
 
   const settings = await getSettings();
 

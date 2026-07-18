@@ -161,6 +161,22 @@ model WinbackLog {
   sentAt DateTime
 }
 
+/// One tracked page view for the admin Statistik tab. Privacy-light: no IP or
+/// raw user agent is stored — `visitor` is a daily-rotating salted hash used
+/// only to count unique visitors. Old rows are pruned by the daily cron.
+model PageView {
+  id        String   @id @default(cuid())
+  /// "yyyy-MM-dd" in the shop timezone.
+  day       String
+  path      String
+  referrer  String   @default("")
+  device    String   @default("")
+  visitor   String
+  createdAt DateTime @default(now())
+
+  @@index([day])
+}
+
 /// A Web-Push subscription of the admin PWA (owner's phone/browser). Every
 /// subscription receives a push notification on new bookings/cancellations.
 model PushSubscription {

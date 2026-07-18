@@ -20,6 +20,9 @@ export type RevenueStats = {
   // No-shows: past appointments explicitly marked "nicht erschienen".
   noShowCount: number;
   noShowCents: number;
+  // Expected revenue: booked, upcoming, not yet taken place.
+  expectedCents: number;
+  expectedCount: number;
 };
 
 /** Monday (YYYY-MM-DD) of the week containing `ds`. */
@@ -46,6 +49,21 @@ export async function getRevenueStats(): Promise<RevenueStats> {
   });
   const noShowCount = noShowRows.length;
   const noShowCents = noShowRows.reduce((s, r) => s + r.service.priceCents, 0);
+
+  // Expected revenue: everything booked and still ahead (incl. pending
+  // approval — the slot is held either way).
+  const upcomingRows = await prisma.appointment.findMany({
+    where: {
+      status: { in: ["CONFIRMED", "PENDING"] },
+      startTime: { gte: new Date() },
+    },
+    select: { service: { select: { priceCents: true } } },
+  });
+  const expectedCount = upcomingRows.length;
+  const expectedCents = upcomingRows.reduce(
+    (s, r) => s + r.service.priceCents,
+    0,
+  );
 
   // Last 8 week-buckets (oldest → newest).
   const currentMonday = mondayOf(todayInTz(tz));
@@ -96,5 +114,7 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     thisMonthCents: monthMap.get(curMonthKey) ?? 0,
     noShowCount,
     noShowCents,
+    expectedCents,
+    expectedCount,
   };
 }

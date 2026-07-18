@@ -4,6 +4,7 @@ import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { siteConfig } from "@/config/site";
 import PWARegister from "@/components/ui/PWARegister";
+import TrackPageview from "@/components/ui/TrackPageview";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -79,6 +80,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-page text-foreground">
         {children}
         <PWARegister />
+        <TrackPageview />
         <Analytics />
       </body>
     </html>

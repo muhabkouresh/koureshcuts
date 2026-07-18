@@ -15,7 +15,7 @@ import { sendConfirmationEmails, sendBookingRequestEmail } from "@/lib/email";
 import { googleCalendarUrl } from "@/lib/calendar";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendAdminPush } from "@/lib/push";
-import { formatDateTimeLabel } from "@/lib/time";
+import { formatDateTimeLabel, weekdayOf, zonedToUtc } from "@/lib/time";
 
 // POST /api/appointments — create a guest booking.
 export async function POST(request: NextRequest) {
@@ -207,6 +207,35 @@ export async function POST(request: NextRequest) {
       { error: "Buchung konnte nicht angelegt werden. Bitte erneut versuchen." },
       { status: 500 },
     );
+  }
+
+  // Self-cleaning waitlist: this booking fulfils any waitlist wish of the
+  // same customer that matches the booked day (exact day, matching weekday,
+  // or "any day") — those entries leave the list automatically.
+  try {
+    const dayStart = zonedToUtc(dateStr, 0, siteConfig.timezone);
+    const dayEnd = zonedToUtc(dateStr, 24 * 60, siteConfig.timezone);
+    const bookedWeekday = String(weekdayOf(dateStr));
+    const wishes = await prisma.waitlistEntry.findMany({
+      where: {
+        customerEmail: { equals: input.customerEmail, mode: "insensitive" },
+      },
+      select: { id: true, date: true, weekdays: true },
+    });
+    const fulfilled = wishes
+      .filter((w) =>
+        w.date
+          ? w.date >= dayStart && w.date < dayEnd
+          : !w.weekdays || w.weekdays.split(",").includes(bookedWeekday),
+      )
+      .map((w) => w.id);
+    if (fulfilled.length > 0) {
+      await prisma.waitlistEntry.deleteMany({
+        where: { id: { in: fulfilled } },
+      });
+    }
+  } catch (err) {
+    console.error("waitlist self-clean failed", err);
   }
 
   // Send confirmation emails; never fail the booking if email delivery hiccups.
