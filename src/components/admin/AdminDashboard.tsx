@@ -188,6 +188,37 @@ export default function AdminDashboard({
     };
   }, []);
 
+  // Live sync: new bookings/cancellations appear without a manual reload.
+  // Three triggers — the booking push (relayed by the service worker as a
+  // "kc:refresh" message, near-instant), returning to the foreground, and a
+  // 30s heartbeat while the tab is visible and online.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        router.refresh();
+      }
+    };
+    const id = window.setInterval(refresh, 30_000);
+    const onMsg = (e: MessageEvent) => {
+      if ((e.data as { type?: string } | null)?.type === "kc:refresh") {
+        refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", onMsg);
+    }
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("message", onMsg);
+      }
+    };
+  }, [router]);
+
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
     router.replace("/admin/login");
@@ -206,12 +237,23 @@ export default function AdminDashboard({
           />
           {siteName} <span className="text-brand">· Admin</span>
         </h1>
-        <button
-          onClick={logout}
-          className="text-sm text-muted underline underline-offset-4 transition-colors hover:text-foreground"
-        >
-          Abmelden
-        </button>
+        <div className="flex items-center gap-4">
+          {!offline && (
+            <span
+              className="flex items-center gap-1.5 text-xs font-medium text-muted"
+              title="Neue Buchungen erscheinen automatisch — kein Neuladen nötig"
+            >
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+              Live
+            </span>
+          )}
+          <button
+            onClick={logout}
+            className="text-sm text-muted underline underline-offset-4 transition-colors hover:text-foreground"
+          >
+            Abmelden
+          </button>
+        </div>
       </div>
 
       {offline && (

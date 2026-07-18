@@ -197,6 +197,42 @@ export default function BookingFlow({ services }: { services: Service[] }) {
     };
   }, [service, date]);
 
+  // Live refresh of the visible day: bookings and cancellations by others
+  // appear without a manual reload — silently on focus/foreground and every
+  // 45s. A selected slot survives as long as it is still free.
+  useEffect(() => {
+    if (!service || !date || step !== "datetime") return;
+    let cancelled = false;
+    async function refetch() {
+      try {
+        const data = await fetch(
+          `/api/availability?serviceId=${service!.id}&date=${date}`,
+          { cache: "no-store" },
+        ).then((r) => r.json());
+        if (cancelled) return;
+        const loaded: Slot[] = data.slots ?? [];
+        setSlots(loaded);
+        setSlot((prev) =>
+          prev && loaded.some((s) => s.start === prev.start) ? prev : null,
+        );
+      } catch {
+        /* keep the last known slots */
+      }
+    }
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refetch();
+    };
+    const id = window.setInterval(onVisible, 45_000);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [service, date, step]);
+
   function chooseService(s: Service) {
     setService(s);
     setDate(null);
