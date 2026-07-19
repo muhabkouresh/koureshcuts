@@ -907,6 +907,7 @@ function TermineTab({
             <AgendaCard
               key={a.id}
               appt={a}
+              swapPool={appointments}
               siteName={siteName}
               onChange={onChange}
             />
@@ -2508,10 +2509,13 @@ function VerspaetungenTab() {
 
 function AgendaCard({
   appt: a,
+  swapPool,
   siteName,
   onChange,
 }: {
   appt: Appointment;
+  /** All loaded appointments — source for the swap-partner picker. */
+  swapPool: Appointment[];
   siteName: string;
   onChange: () => void;
 }) {
@@ -2531,10 +2535,27 @@ function AgendaCard({
   const [moveNotify, setMoveNotify] = useState(true);
   const [moveReason, setMoveReason] = useState("");
   const [moveError, setMoveError] = useState<string | null>(null);
+  // Swap this appointment's time with another customer's ("Tauschen").
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapTargetId, setSwapTargetId] = useState("");
+  const [swapNotify, setSwapNotify] = useState(true);
+  const [swapError, setSwapError] = useState<string | null>(null);
   // If the booking starts off the 15-minute grid, keep its time selectable.
   const moveTimeOptions = TIME_OPTIONS.includes(moveTime)
     ? TIME_OPTIONS
     : [...TIME_OPTIONS, moveTime].sort();
+
+  const swapCandidates = useMemo(() => {
+    const nowIso = new Date().toISOString();
+    return swapPool
+      .filter(
+        (c) =>
+          c.id !== a.id &&
+          (c.status === "CONFIRMED" || c.status === "PENDING") &&
+          c.start > nowIso,
+      )
+      .sort((x, y) => x.start.localeCompare(y.start));
+  }, [swapPool, a.id]);
   const cancelled = a.status === "CANCELLED";
   const noShow = a.status === "NO_SHOW";
   const isPast = new Date(a.start).getTime() < nowMs();
@@ -2594,6 +2615,43 @@ function AgendaCard({
         return;
       }
       setMoveOpen(false);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function swap() {
+    const target = swapCandidates.find((c) => c.id === swapTargetId);
+    if (!target) return;
+    if (
+      !window.confirm(
+        `Termine tauschen?\n\n${a.customerName}: ${formatDateTimeLabel(new Date(a.start), tz)} → ${formatDateTimeLabel(new Date(target.start), tz)}\n${target.customerName}: ${formatDateTimeLabel(new Date(target.start), tz)} → ${formatDateTimeLabel(new Date(a.start), tz)}\n\n` +
+          (swapNotify
+            ? "Beide Kunden mit E-Mail-Adresse werden informiert."
+            : "Die Kunden werden NICHT benachrichtigt."),
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setSwapError(null);
+    try {
+      const res = await fetch("/api/admin/appointments/swap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          aId: a.id,
+          bId: target.id,
+          notify: swapNotify,
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSwapError(d.error ?? "Tauschen fehlgeschlagen.");
+        return;
+      }
+      setSwapOpen(false);
       onChange();
     } finally {
       setBusy(false);
@@ -2711,6 +2769,15 @@ function AgendaCard({
                 Verschieben
               </button>
             )}
+            {!cancelled && !noShow && !isPast && swapCandidates.length > 0 && (
+              <button
+                disabled={busy}
+                onClick={() => setSwapOpen((o) => !o)}
+                className="rounded-lg border border-line px-3 py-1.5 hover:border-brand hover:text-brand disabled:opacity-50"
+              >
+                ⇄ Tauschen
+              </button>
+            )}
             {isPast && !cancelled && !noShow && (
               <button
                 disabled={busy}
@@ -2808,6 +2875,52 @@ function AgendaCard({
               </p>
               {moveError && (
                 <p className="mt-2 text-xs text-red-600">{moveError}</p>
+              )}
+            </div>
+          )}
+
+          {swapOpen && (
+            <div className="mt-3 rounded-xl border border-brand/30 bg-brand-soft/40 p-3">
+              <p className="text-xs font-semibold">
+                Termin tauschen: {a.customerName} (
+                {formatDateTimeLabel(new Date(a.start), tz)}) ⇄ …
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <select
+                  value={swapTargetId}
+                  onChange={(e) => setSwapTargetId(e.target.value)}
+                  className="min-w-0 max-w-full rounded-lg border border-line bg-background px-2 py-2 text-xs"
+                >
+                  <option value="">Tauschpartner wählen…</option>
+                  {swapCandidates.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {formatDateTimeLabel(new Date(c.start), tz)} —{" "}
+                      {c.customerName} ({c.serviceName})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  disabled={busy || !swapTargetId}
+                  onClick={swap}
+                  className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {busy ? "…" : "Tauschen"}
+                </button>
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={swapNotify}
+                  onChange={(e) => setSwapNotify(e.target.checked)}
+                />
+                Beide Kunden per E-Mail informieren
+              </label>
+              <p className="mt-1.5 text-[11px] text-muted">
+                Beide Termine wechseln die Uhrzeit, jeder behält seine Dauer.
+                Überschneidungen werden blockiert.
+              </p>
+              {swapError && (
+                <p className="mt-2 text-xs text-red-600">{swapError}</p>
               )}
             </div>
           )}
