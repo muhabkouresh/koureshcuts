@@ -52,6 +52,13 @@ export const delayNoticeSchema = z.object({
   minutes: z.number().int().min(5).max(180),
 });
 
+// Emergency closure (Notfall-Knopf): close today (or today + tomorrow),
+// cancel + email the affected customers in one step.
+export const emergencyCloseSchema = z.object({
+  days: z.number().int().min(1).max(2),
+  reason: z.string().trim().max(200).optional().default(""),
+});
+
 // Delay minutes assigned to a customer (admin "Minutenkonto").
 export const delayLogSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ungültiges Datum."),
@@ -166,6 +173,8 @@ export const settingsSchema = z
     noShowBlockThreshold: z.number().int().min(0).max(10).optional(),
     // Win-back email after N weeks without a visit (0 = off).
     winbackWeeks: z.number().int().min(0).max(52).optional(),
+    // Owner-copy mails on bookings etc. (false = Mail-Sparmodus, push only).
+    ownerCopyEmails: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: "Keine Änderungen übergeben.",

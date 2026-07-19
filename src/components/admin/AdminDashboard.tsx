@@ -89,6 +89,8 @@ type Data = {
   maxActiveBookingsPerEmail: number;
   noShowBlockThreshold: number;
   winbackWeeks: number;
+  ownerCopyEmails: boolean;
+  emailFailures: number;
   revenue: RevenueStats;
   services: Service[];
   appointments: Appointment[];
@@ -263,6 +265,13 @@ export default function AdminDashboard({
         </p>
       )}
 
+      {data.emailFailures > 0 && (
+        <MailFailureBanner
+          count={data.emailFailures}
+          onDone={() => router.refresh()}
+        />
+      )}
+
       <GlobalSearch
         appointments={data.appointments}
         onOpenDay={(date) =>
@@ -340,11 +349,79 @@ export default function AdminDashboard({
           cancelDeadlineHours={data.cancelDeadlineHours}
           maxActiveBookingsPerEmail={data.maxActiveBookingsPerEmail}
           noShowBlockThreshold={data.noShowBlockThreshold}
+          ownerCopyEmails={data.ownerCopyEmails}
           onChange={() => router.refresh()}
         />
       )}
       {tab === "verspaetungen" && <VerspaetungenTab />}
     </main>
+  );
+}
+
+/* ---------------------------- Mail failure banner --------------------------- */
+
+// Shown while refused mails (e.g. Resend daily limit) wait for a retry. The
+// cron retries automatically at 07:00; the button triggers it right away.
+function MailFailureBanner({
+  count,
+  onDone,
+}: {
+  count: number;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function retry() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/email-failures", { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg(d.error ?? "Fehler.");
+        return;
+      }
+      if (d.retried > 0) {
+        setMsg(
+          `${d.retried} E-Mail${d.retried === 1 ? "" : "s"} nachgesendet.` +
+            (d.stillFailing > 0
+              ? ` ${d.stillFailing} weiterhin nicht zustellbar.`
+              : ""),
+        );
+      } else {
+        setMsg(
+          "Weiterhin nicht zustellbar — nächster automatischer Versuch morgen früh um 7 Uhr.",
+        );
+      }
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200">
+      <p className="font-semibold">
+        ⚠️ {count} E-Mail{count === 1 ? " konnte" : "s konnten"} nicht
+        zugestellt werden
+      </p>
+      <p className="mt-0.5 text-[13px] text-red-700">
+        Wahrscheinlich ist das Tageslimit des E-Mail-Dienstes erreicht. Morgen
+        früh um 7 Uhr wird der Versand automatisch wiederholt — keine E-Mail
+        geht verloren.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <button
+          onClick={retry}
+          disabled={busy}
+          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+        >
+          {busy ? "Sende…" : "Jetzt erneut versuchen"}
+        </button>
+        {msg && <span className="text-xs">{msg}</span>}
+      </div>
+    </div>
   );
 }
 
@@ -677,6 +754,8 @@ function TermineTab({
 
       {stats.todayCount > 0 && <DelayCard />}
 
+      <EmergencyCard appointments={appointments} onChange={onChange} />
+
       {waitlist.length > 0 && (
         <QueueCard
           entries={waitlist}
@@ -869,6 +948,164 @@ function TermineTab({
 
       {feedUrl && <FeedBox feedUrl={feedUrl} />}
     </div>
+  );
+}
+
+// Notfall-Knopf: close today (or today + tomorrow) at short notice — one
+// action blocks the day(s), cancels every remaining appointment and emails
+// the affected customers; the public site shows a red closure banner.
+function EmergencyCard({
+  appointments,
+  onChange,
+}: {
+  appointments: Appointment[];
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [days, setDays] = useState(1);
+  const [reason, setReason] = useState("");
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const today = todayInTz(tz);
+  // Matches the server's conflict query: active bookings starting from now
+  // within the closed range. Snapshot of "now" at render is close enough.
+  const affected = useMemo(() => {
+    const until = addDaysToDateStr(today, days - 1);
+    const nowIso = new Date().toISOString();
+    return appointments.filter((a) => {
+      if (a.status !== "CONFIRMED" && a.status !== "PENDING") return false;
+      const ds = dateKey(new Date(a.start), tz);
+      return ds >= today && ds <= until && a.start >= nowIso;
+    });
+  }, [appointments, days, today]);
+
+  async function close() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/emergency-close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days, reason }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMsg(
+          `Geschlossen. ${d.cancelled} Termin${d.cancelled === 1 ? "" : "e"} abgesagt, ${d.notified} Kunde${d.notified === 1 ? "" : "n"} per E-Mail informiert.`,
+        );
+        setArmed(false);
+        onChange();
+      } else {
+        setMsg(d.error ?? "Fehler.");
+        setArmed(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="self-start rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
+      >
+        🚨 Notfall — kurzfristig schließen
+      </button>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border border-red-200 bg-red-50/60 p-5 shadow-soft">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-red-800">
+            🚨 Notfall — kurzfristig schließen
+          </h2>
+          <p className="mt-1 text-xs text-red-700">
+            Krank geworden oder ein Notfall? Ein Klick: Die Tage werden für
+            Online-Buchungen gesperrt, alle betroffenen Termine abgesagt und
+            die Kunden automatisch per E-Mail informiert. Auf der Website
+            erscheint ein roter Hinweis.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setOpen(false);
+            setArmed(false);
+            setMsg(null);
+          }}
+          className="text-xs text-red-700 underline underline-offset-2"
+        >
+          Schließen
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        <select
+          value={days}
+          onChange={(e) => {
+            setDays(Number(e.target.value));
+            setArmed(false);
+          }}
+          className="rounded-lg border border-red-200 bg-background px-3 py-2"
+        >
+          <option value={1}>Nur heute</option>
+          <option value={2}>Heute + morgen</option>
+        </select>
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={200}
+          placeholder="Grund (optional, steht in der Absage-Mail)"
+          className="min-w-0 flex-1 rounded-lg border border-red-200 bg-background px-3 py-2"
+        />
+      </div>
+
+      <p className="mt-3 text-xs font-medium text-red-800">
+        {affected.length === 0
+          ? "Keine offenen Termine im Zeitraum — die Tage werden nur gesperrt."
+          : `${affected.length} Termin${affected.length === 1 ? " wird" : "e werden"} abgesagt; Kunden mit E-Mail-Adresse werden benachrichtigt.`}
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {!armed ? (
+          <button
+            onClick={() => {
+              setArmed(true);
+              setMsg(null);
+            }}
+            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Schließen & Termine absagen
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={close}
+              disabled={busy}
+              className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {busy ? "Wird geschlossen…" : "Wirklich schließen — jetzt absagen"}
+            </button>
+            <button
+              onClick={() => setArmed(false)}
+              disabled={busy}
+              className="text-sm text-red-700 underline underline-offset-2"
+            >
+              Abbrechen
+            </button>
+          </>
+        )}
+        {msg && <span className="text-xs font-medium text-red-800">{msg}</span>}
+      </div>
+
+      <p className="mt-3 text-[11px] text-red-700/80">
+        Wieder öffnen: Sperre unter Verfügbarkeit → Abwesenheiten löschen.
+      </p>
+    </section>
   );
 }
 
@@ -4311,6 +4548,7 @@ function Availability({
   cancelDeadlineHours,
   maxActiveBookingsPerEmail,
   noShowBlockThreshold,
+  ownerCopyEmails,
   onChange,
 }: {
   hours: DayHours[];
@@ -4322,6 +4560,7 @@ function Availability({
   cancelDeadlineHours: number;
   maxActiveBookingsPerEmail: number;
   noShowBlockThreshold: number;
+  ownerCopyEmails: boolean;
   onChange: () => void;
 }) {
   return (
@@ -4335,11 +4574,74 @@ function Availability({
         leadHours={reminderLeadHours}
         onChange={onChange}
       />
+      <OwnerCopyCard enabled={ownerCopyEmails} onChange={onChange} />
       <PushCard />
       <HoursCard hours={hours} onChange={onChange} />
       <SpecialDaysCard specialDays={specialDays} onChange={onChange} />
       <TimeOffCard timeOff={timeOff} onChange={onChange} />
     </div>
+  );
+}
+
+// "Mail-Sparmodus": owner-copy mails (new booking, waitlist, cancellations)
+// on/off. Off nearly halves the daily Resend volume — push covers the events.
+function OwnerCopyCard({
+  enabled: initialEnabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange: () => void;
+}) {
+  const [enabled, setEnabled] = useState(initialEnabled);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerCopyEmails: enabled }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setMsg(res.ok ? "Gespeichert." : (d.error ?? "Fehler."));
+      if (res.ok) onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">Kopie-Mails an dich</h2>
+      <p className="mt-1 text-xs text-muted">
+        Bei jeder Buchung, Absage oder Wartelisten-Anfrage bekommst du eine
+        Kopie per E-Mail. Im Mail-Sparmodus (Aus) entfallen diese Kopien — du
+        bekommst weiterhin jede Push-Nachricht. Das halbiert fast den täglichen
+        E-Mail-Verbrauch (Resend-Limit: 100/Tag). Kunden-Mails sind nicht
+        betroffen.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        <select
+          value={enabled ? "1" : "0"}
+          onChange={(e) => setEnabled(e.target.value === "1")}
+          className="rounded-lg border border-line bg-background px-3 py-2"
+        >
+          <option value="1">An — Kopie per E-Mail + Push</option>
+          <option value="0">Aus — nur Push (Mail-Sparmodus)</option>
+        </select>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+        >
+          {saving ? "Speichern…" : "Speichern"}
+        </button>
+        {msg && <span className="text-sm text-muted">{msg}</span>}
+      </div>
+    </section>
   );
 }
 

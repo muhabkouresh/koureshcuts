@@ -61,15 +61,21 @@ model Settings {
   noShowBlockThreshold Int @default(2)
   /// Win-back email after N weeks without a visit (0 = off).
   winbackWeeks Int @default(0)
+  /// Owner-copy mails (new booking, waitlist, cancellation notices). Off =
+  /// "Mail-Sparmodus": the owner relies on push only, halving daily volume.
+  ownerCopyEmails   Boolean  @default(true)
   updatedAt         DateTime @updatedAt
 }
 
 /// A blocked-out date range (vacation, day off). Inclusive of both dates.
+/// `emergency` marks a short-notice closure (Notfall-Knopf) — the public site
+/// shows a red "kurzfristig geschlossen" banner while it covers today.
 model TimeOff {
   id        String   @id @default(cuid())
   startDate DateTime
   endDate   DateTime
   reason    String   @default("")
+  emergency Boolean  @default(false)
   createdAt DateTime @default(now())
 }
 
@@ -175,6 +181,23 @@ model PageView {
   createdAt DateTime @default(now())
 
   @@index([day])
+}
+
+/// An email that Resend refused to send (e.g. the free-plan daily limit).
+/// Stored fully rendered so the daily 07:00 cron — or the admin's "retry now"
+/// button — can resend it verbatim. Rows are pruned after 14 days; after 4
+/// failed attempts a mail is given up on.
+model EmailFailure {
+  id        String    @id @default(cuid())
+  to        String
+  subject   String
+  html      String
+  error     String    @default("")
+  attempts  Int       @default(1)
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([sentAt])
 }
 
 /// A Web-Push subscription of the admin PWA (owner's phone/browser). Every

@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
 import { ACTIVE_STATUSES } from "@/lib/constants";
-import { sendReminderEmail } from "@/lib/email";
+import { sendReminderEmail, retryFailedEmails } from "@/lib/email";
 import { getSettings } from "@/lib/settings";
 import { runWinback } from "@/lib/winback";
 import { sendCustomerReminderPush } from "@/lib/push";
@@ -44,6 +44,15 @@ export async function GET(request: NextRequest) {
     where: { createdAt: { lt: new Date(nowTs - 400 * 24 * 60 * 60_000) } },
   });
 
+  // Retry mails Resend refused (e.g. yesterday's daily limit) first — the
+  // cron runs at 07:00 when the fresh quota is available.
+  let emailsRetried = 0;
+  try {
+    emailsRetried = (await retryFailedEmails()).retried;
+  } catch (err) {
+    console.error("email retry run failed", err);
+  }
+
   const settings = await getSettings();
 
   // Win-back: one "we miss you" mail per lapsed customer (see lib/winback).
@@ -61,6 +70,7 @@ export async function GET(request: NextRequest) {
       considered: 0,
       sent: 0,
       winbackSent,
+      emailsRetried,
       waitlistCleaned: cleanedDay.count + cleanedFlex.count,
     });
   }
@@ -113,6 +123,7 @@ export async function GET(request: NextRequest) {
     considered: due.length,
     sent,
     winbackSent,
+    emailsRetried,
     waitlistCleaned: cleanedDay.count + cleanedFlex.count,
   });
 }

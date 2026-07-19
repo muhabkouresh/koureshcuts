@@ -12,6 +12,8 @@ export type SettingsPatch = {
   cancelDeadlineHours?: number;
   maxActiveBookingsPerEmail?: number;
   noShowBlockThreshold?: number;
+  winbackWeeks?: number;
+  ownerCopyEmails?: boolean;
 };
 
 export async function getSettings() {

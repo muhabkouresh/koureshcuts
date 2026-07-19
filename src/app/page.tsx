@@ -88,8 +88,14 @@ export default async function Home() {
     },
     orderBy: { startDate: "asc" },
     take: 3,
-    select: { id: true, startDate: true, endDate: true },
+    select: { id: true, startDate: true, endDate: true, emergency: true },
   });
+  // A short-notice closure (Notfall-Knopf) covering right now gets its own
+  // red banner instead of the regular amber closure list.
+  const emergencyNow = closures.find(
+    (c) => c.emergency && c.startDate.getTime() <= nowMs(),
+  );
+  const plannedClosures = closures.filter((c) => c !== emergencyNow);
   let nextSlot: string | null = null;
   if (services[0]) {
     try {
@@ -122,13 +128,26 @@ export default async function Home() {
         </div>
 
         <div className="relative mx-auto flex max-w-3xl flex-col items-center px-5 pb-24 pt-36 text-center sm:pb-32 sm:pt-44">
-          {closures.length > 0 && (
-            <div className="animate-fade-up mb-6 w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50/90 px-5 py-3 text-sm text-amber-800 backdrop-blur-sm">
+          {emergencyNow && (
+            <div className="animate-fade-up mb-6 w-full max-w-md rounded-2xl border border-red-200 bg-red-50/90 px-5 py-3 text-sm text-red-800 backdrop-blur-sm">
               <p className="font-semibold">
-                {closures.length === 1 ? "Geschlossen" : "Geschlossen an folgenden Tagen"}
+                🚨 Kurzfristig geschlossen:{" "}
+                {closureLabel(emergencyNow.startDate, emergencyNow.endDate)}
               </p>
               <p className="mt-0.5">
-                {closures
+                Bereits gebuchte Termine wurden per E-Mail abgesagt. Wir bitten
+                um Verständnis!
+              </p>
+            </div>
+          )}
+
+          {plannedClosures.length > 0 && (
+            <div className="animate-fade-up mb-6 w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50/90 px-5 py-3 text-sm text-amber-800 backdrop-blur-sm">
+              <p className="font-semibold">
+                {plannedClosures.length === 1 ? "Geschlossen" : "Geschlossen an folgenden Tagen"}
+              </p>
+              <p className="mt-0.5">
+                {plannedClosures
                   .map((c) => closureLabel(c.startDate, c.endDate))
                   .join(" · ")}
               </p>

@@ -28,6 +28,7 @@ export default async function AdminPage() {
     revenue,
     waitlist,
     noShowGroups,
+    emailFailures,
   ] = await Promise.all([
       prisma.appointment.findMany({
         where: { startTime: { gte: from, lte: to } },
@@ -69,6 +70,10 @@ export default async function AdminPage() {
         where: { status: "NO_SHOW", customerEmail: { not: "" } },
         _count: { _all: true },
       }),
+      // Refused mails still waiting for a retry — powers the warning banner.
+      prisma.emailFailure.count({
+        where: { sentAt: null, attempts: { lt: 4 } },
+      }),
     ]);
 
   // Sum per lowercased email — the same customer may appear in mixed case.
@@ -93,6 +98,8 @@ export default async function AdminPage() {
     maxActiveBookingsPerEmail: settings.maxActiveBookingsPerEmail,
     noShowBlockThreshold: settings.noShowBlockThreshold,
     winbackWeeks: settings.winbackWeeks,
+    ownerCopyEmails: settings.ownerCopyEmails,
+    emailFailures,
     revenue,
     services,
     appointments: appointments.map((a) => ({

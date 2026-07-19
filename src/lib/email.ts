@@ -1,5 +1,8 @@
 import { Resend } from "resend";
 import { siteConfig } from "@/config/site";
+import { prisma } from "./prisma";
+import { getSettings } from "./settings";
+import { sendAdminPush } from "./push";
 import { formatDateTimeLabel, formatClock, formatLongDate } from "./time";
 import { priceFull } from "./format";
 import { buildIcs, googleCalendarUrl, type CalendarEvent } from "./calendar";
@@ -68,6 +71,57 @@ type SendArgs = {
   attachIcs?: string;
 };
 
+/**
+ * Whether owner-copy mails (new booking, waitlist, cancellation notices) are
+ * enabled. Off = "Mail-Sparmodus": push notifications carry those events, so
+ * skipping the copies nearly halves the daily Resend volume. Fails open —
+ * a settings read error must never suppress mail.
+ */
+async function ownerCopiesEnabled(): Promise<boolean> {
+  try {
+    return (await getSettings()).ownerCopyEmails;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Record a refused mail so the daily 07:00 cron (fresh Resend quota) or the
+ * admin's retry button can resend it, and push a one-time heads-up to the
+ * owner (throttled: at most one push per hour of failures). Never throws.
+ */
+async function recordFailure(
+  to: string,
+  subject: string,
+  html: string,
+  error: unknown,
+): Promise<void> {
+  try {
+    const recent = await prisma.emailFailure.findFirst({
+      where: { createdAt: { gt: new Date(Date.now() - 60 * 60_000) } },
+      select: { id: true },
+    });
+    await prisma.emailFailure.create({
+      data: {
+        to,
+        subject,
+        html,
+        error: String(
+          (error as { message?: string })?.message ?? error ?? "",
+        ).slice(0, 500),
+      },
+    });
+    if (!recent) {
+      await sendAdminPush(
+        "⚠️ E-Mail nicht zugestellt",
+        "Eine E-Mail konnte nicht gesendet werden (evtl. Tageslimit erreicht). Sie wird morgen früh automatisch nachgesendet — Details im Admin-Bereich.",
+      );
+    }
+  } catch (err) {
+    console.error("email failure logging failed", err);
+  }
+}
+
 async function send({
   to,
   subject,
@@ -83,21 +137,78 @@ async function send({
     // In dev (no API key) treat as delivered so the flow stays testable.
     return { ok: true };
   }
-  const { data, error } = await resend.emails.send({
-    from: FROM,
-    to,
-    subject,
-    html,
-    attachments: attachIcs
-      ? [{ filename: "termin.ics", content: Buffer.from(attachIcs) }]
-      : undefined,
-  });
-  if (error) {
-    console.error(`[resend] Versand an ${to} fehlgeschlagen:`, error);
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM,
+      to,
+      subject,
+      html,
+      attachments: attachIcs
+        ? [{ filename: "termin.ics", content: Buffer.from(attachIcs) }]
+        : undefined,
+    });
+    if (error) {
+      console.error(`[resend] Versand an ${to} fehlgeschlagen:`, error);
+      await recordFailure(to, subject, html, error);
+      return { ok: false };
+    }
+    console.log(`[resend] gesendet an ${to} (id ${data?.id})`);
+    return { ok: true };
+  } catch (err) {
+    console.error(`[resend] Versand an ${to} fehlgeschlagen:`, err);
+    await recordFailure(to, subject, html, err);
     return { ok: false };
   }
-  console.log(`[resend] gesendet an ${to} (id ${data?.id})`);
-  return { ok: true };
+}
+
+/**
+ * Second delivery attempt for refused mails (daily cron at 07:00 with fresh
+ * quota, or the admin's "retry now" button). Calls Resend directly — going
+ * through send() again would re-record every failure as a new row. Any .ics
+ * attachment of the original mail is dropped; the mail body carries the same
+ * calendar links. Also prunes rows older than 14 days.
+ */
+export async function retryFailedEmails(): Promise<{
+  retried: number;
+  stillFailing: number;
+}> {
+  await prisma.emailFailure
+    .deleteMany({
+      where: { createdAt: { lt: new Date(Date.now() - 14 * 24 * 60 * 60_000) } },
+    })
+    .catch(() => {});
+  if (!resend) return { retried: 0, stillFailing: 0 };
+  const pending = await prisma.emailFailure.findMany({
+    where: { sentAt: null, attempts: { lt: 4 } },
+    orderBy: { createdAt: "asc" },
+    take: 80,
+  });
+  let retried = 0;
+  let stillFailing = 0;
+  for (const f of pending) {
+    try {
+      const { error } = await resend.emails.send({
+        from: FROM,
+        to: f.to,
+        subject: f.subject,
+        html: f.html,
+      });
+      if (error) throw error;
+      await prisma.emailFailure.update({
+        where: { id: f.id },
+        data: { sentAt: new Date() },
+      });
+      retried++;
+    } catch (err) {
+      console.error(`[resend] Neuversand an ${f.to} fehlgeschlagen:`, err);
+      await prisma.emailFailure
+        .update({ where: { id: f.id }, data: { attempts: { increment: 1 } } })
+        .catch(() => {});
+      stillFailing++;
+    }
+  }
+  if (retried > 0) console.log(`[resend] ${retried} E-Mails nachgesendet`);
+  return { retried, stillFailing };
 }
 
 /** Confirmation to the customer (with calendar) + a heads-up to the owner. */
@@ -164,8 +275,8 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
     attachIcs: ics,
   });
 
-  // Owner notification.
-  if (siteConfig.ownerEmail) {
+  // Owner notification (skipped in Mail-Sparmodus — push covers it).
+  if (siteConfig.ownerEmail && (await ownerCopiesEnabled())) {
     const ownerHtml = layout(
       "Neue Buchung",
       `${detailsTable(data)}
@@ -217,7 +328,7 @@ export async function sendWaitlistJoinedEmails(
     html: customerHtml,
   });
 
-  if (siteConfig.ownerEmail) {
+  if (siteConfig.ownerEmail && (await ownerCopiesEnabled())) {
     const ownerHtml = layout(
       "Neue Warteliste-Anfrage",
       `<table style="width:100%;border-collapse:collapse;font-size:14px">
@@ -330,7 +441,7 @@ export async function sendRescheduleEmails(
     attachIcs: ics,
   });
 
-  if (siteConfig.ownerEmail) {
+  if (siteConfig.ownerEmail && (await ownerCopiesEnabled())) {
     const ownerHtml = layout(
       "Termin verschoben",
       `<p style="font-size:14px;color:#444">Ein Kunde hat seinen Termin verschoben:</p>
@@ -535,20 +646,47 @@ export async function sendBroadcastEmails(
 
   let sent = 0;
   let failed = 0;
+  // A failed chunk is queued for the daily retry instead of being lost.
+  async function queueChunk(
+    chunk: typeof payloads,
+    error: unknown,
+  ): Promise<void> {
+    const msg = String(
+      (error as { message?: string })?.message ?? error ?? "",
+    ).slice(0, 500);
+    await prisma.emailFailure
+      .createMany({
+        data: chunk.map((p) => ({
+          to: p.to,
+          subject: p.subject,
+          html: p.html,
+          error: msg,
+        })),
+      })
+      .catch((err) => console.error("broadcast failure logging failed", err));
+  }
   for (let i = 0; i < payloads.length; i += 100) {
     const chunk = payloads.slice(i, i + 100);
     try {
       const { error } = await resend.batch.send(chunk);
       if (error) {
         console.error("[resend] Rundmail-Batch fehlgeschlagen:", error);
+        await queueChunk(chunk, error);
         failed += chunk.length;
       } else {
         sent += chunk.length;
       }
     } catch (err) {
       console.error("[resend] Rundmail-Batch fehlgeschlagen:", err);
+      await queueChunk(chunk, err);
       failed += chunk.length;
     }
+  }
+  if (failed > 0) {
+    await sendAdminPush(
+      "⚠️ Rundmail unvollständig",
+      `${failed} von ${payloads.length} Rundmail-Empfängern konnten nicht erreicht werden — der Versand wird morgen früh automatisch wiederholt.`,
+    );
   }
   console.log(`[resend] Rundmail: ${sent} gesendet, ${failed} fehlgeschlagen`);
   return { sent, failed };
@@ -646,7 +784,7 @@ export async function sendCancellationNotice(
   data: BookingEmailData,
   reason?: string,
 ): Promise<void> {
-  if (!siteConfig.ownerEmail) return;
+  if (!siteConfig.ownerEmail || !(await ownerCopiesEnabled())) return;
   const reasonRow = reason?.trim()
     ? `<p style="font-size:13px;color:#444;margin-top:12px"><strong>Absagegrund:</strong> ${reason.trim()}</p>`
     : "";
