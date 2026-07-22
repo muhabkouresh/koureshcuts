@@ -33,6 +33,9 @@ export async function GET(request: NextRequest) {
     location: siteConfig.address,
     start: a.startTime,
     end: a.endTime,
+    // Stable UID so a rescheduled booking moves in the subscribed calendar
+    // instead of appearing twice.
+    uid: `${a.id}@koureshcuts.de`,
   }));
 
   let feed: string;

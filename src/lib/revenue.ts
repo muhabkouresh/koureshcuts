@@ -23,6 +23,9 @@ export type RevenueStats = {
   // Expected revenue: booked, upcoming, not yet taken place.
   expectedCents: number;
   expectedCount: number;
+  // Expected revenue within the next 7 days only.
+  expectedWeekCents: number;
+  expectedWeekCount: number;
 };
 
 /** Monday (YYYY-MM-DD) of the week containing `ds`. */
@@ -57,10 +60,19 @@ export async function getRevenueStats(): Promise<RevenueStats> {
       status: { in: ["CONFIRMED", "PENDING"] },
       startTime: { gte: new Date() },
     },
-    select: { service: { select: { priceCents: true } } },
+    select: { startTime: true, service: { select: { priceCents: true } } },
   });
   const expectedCount = upcomingRows.length;
   const expectedCents = upcomingRows.reduce(
+    (s, r) => s + r.service.priceCents,
+    0,
+  );
+  const weekAhead = Date.now() + 7 * 24 * 60 * 60_000;
+  const weekRows = upcomingRows.filter(
+    (r) => r.startTime.getTime() < weekAhead,
+  );
+  const expectedWeekCount = weekRows.length;
+  const expectedWeekCents = weekRows.reduce(
     (s, r) => s + r.service.priceCents,
     0,
   );
@@ -116,5 +128,7 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     noShowCents,
     expectedCents,
     expectedCount,
+    expectedWeekCents,
+    expectedWeekCount,
   };
 }

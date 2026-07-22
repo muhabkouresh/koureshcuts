@@ -25,6 +25,9 @@ export async function GET(
       location: siteConfig.address,
       start: appt.startTime,
       end: appt.endTime,
+      // Stable per appointment: repeat taps or a post-reschedule download
+      // update the existing calendar entry instead of duplicating it.
+      uid: `${appt.id}@koureshcuts.de`,
     });
   } catch (err) {
     console.error("ics error", err);
@@ -38,9 +41,9 @@ export async function GET(
       // sheet directly instead of silently saving the file to Files. The
       // `download` attribute on the link forces a proper filename on desktop.
       "Content-Disposition": 'inline; filename="termin.ics"',
-      // The file is immutable for a given appointment — cache it so repeat taps
-      // never wait on a cold serverless start.
-      "Cache-Control": "public, max-age=3600",
+      // Never cache: appointments can be rescheduled or swapped, and a cached
+      // copy would hand the customer the OLD time for up to an hour.
+      "Cache-Control": "no-store",
     },
   });
 }

@@ -3215,7 +3215,20 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
         <RevenueStat label="Gesamt" value={priceFull(revenue.totalCents)} />
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-            Voraussichtlich
+            Voraussichtlich · 7 Tage
+          </p>
+          <p className="mt-1 text-xl font-bold text-emerald-700">
+            {priceFull(revenue.expectedWeekCents)}
+          </p>
+          <p className="mt-0.5 text-[11px] text-emerald-700/80">
+            {revenue.expectedWeekCount}{" "}
+            {revenue.expectedWeekCount === 1 ? "Termin" : "Termine"} in den
+            nächsten 7 Tagen
+          </p>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+            Voraussichtlich · gesamt
           </p>
           <p className="mt-1 text-xl font-bold text-emerald-700">
             {priceFull(revenue.expectedCents)}

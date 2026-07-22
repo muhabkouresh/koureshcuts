@@ -594,7 +594,9 @@ export default function BookingFlow({ services }: { services: Service[] }) {
               href={result.icsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              download="termin.ics"
+              // On iOS the download attribute forces the file into "Dateien"
+              // instead of opening the add-to-calendar preview — desktop only.
+              download={isIosDevice() ? undefined : "termin.ics"}
               className="w-full rounded-full bg-background py-3.5 text-sm font-medium shadow-sm ring-1 ring-line hover:ring-foreground"
             >
               Apple Kalender
@@ -606,6 +608,15 @@ export default function BookingFlow({ services }: { services: Service[] }) {
               Weiteren Termin buchen
             </button>
           </div>
+
+          <PushOptIn
+            reminderOnly
+            date={dateKey(new Date(result.start), tz)}
+            email={email}
+            title="Termin-Erinnerung auch als Push aufs Handy?"
+            label="🔔 Push-Erinnerung aktivieren"
+            activeText="🔔 Aktiv — deine Termin-Erinnerung kommt zusätzlich als Push auf dieses Gerät."
+          />
 
           {service && !result.pending && (
             <SecondSlotOffer
@@ -848,10 +859,34 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
+function isIosDevice(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    /iphone|ipad|ipod/i.test(navigator.userAgent)
+  );
+}
+
 // "Termin-Radar": after joining the waitlist, offer an instant push to this
 // device the moment a slot frees up — faster than the waitlist email. The
 // email (when known) also enables reminder pushes for booked appointments.
-function PushOptIn({ date, email }: { date?: string; email?: string }) {
+// With `reminderOnly` the device gets ONLY reminder pushes for its booked
+// appointments — no "slot freed" radar messages (post-booking opt-in).
+function PushOptIn({
+  date,
+  email,
+  reminderOnly = false,
+  title,
+  label = "🔔 Zusätzlich Sofort-Push aufs Handy",
+  activeText = "🔔 Termin-Radar aktiv — du bekommst sofort eine Push-Nachricht auf diesem Gerät, wenn etwas frei wird.",
+}: {
+  date?: string;
+  email?: string;
+  reminderOnly?: boolean;
+  /** Renders the opt-in inside its own highlighted box with this heading. */
+  title?: string;
+  label?: string;
+  activeText?: string;
+}) {
   const [supported, setSupported] = useState(false);
   const [state, setState] = useState<"idle" | "busy" | "on" | "error">("idle");
 
@@ -891,7 +926,12 @@ function PushOptIn({ date, email }: { date?: string; email?: string }) {
       const res = await fetch("/api/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON(), date, email }),
+        body: JSON.stringify({
+          subscription: sub.toJSON(),
+          date,
+          email,
+          reminderOnly,
+        }),
       });
       setState(res.ok ? "on" : "error");
     } catch {
@@ -899,30 +939,35 @@ function PushOptIn({ date, email }: { date?: string; email?: string }) {
     }
   }
 
-  if (state === "on") {
-    return (
-      <p className="mt-2 text-xs font-medium text-brand-700">
-        🔔 Termin-Radar aktiv — du bekommst sofort eine Push-Nachricht auf
-        diesem Gerät, wenn etwas frei wird.
-      </p>
+  const inner =
+    state === "on" ? (
+      <p className="mt-2 text-xs font-medium text-brand-700">{activeText}</p>
+    ) : (
+      <div className="mt-2">
+        <button
+          type="button"
+          disabled={state === "busy"}
+          onClick={enable}
+          className="rounded-full bg-background px-4 py-2 text-xs font-semibold ring-1 ring-line transition-colors hover:ring-brand disabled:opacity-50"
+        >
+          {state === "busy" ? "…" : label}
+        </button>
+        {state === "error" && (
+          <p className="mt-1.5 text-xs text-muted">
+            Push konnte nicht aktiviert werden — die E-Mail-Benachrichtigung
+            funktioniert trotzdem.
+          </p>
+        )}
+      </div>
     );
-  }
+
+  if (!title) return inner;
+  // Boxed variant (post-booking): renders nothing at all when push is
+  // unsupported, so no empty box appears (early return above).
   return (
-    <div className="mt-2">
-      <button
-        type="button"
-        disabled={state === "busy"}
-        onClick={enable}
-        className="rounded-full bg-background px-4 py-2 text-xs font-semibold ring-1 ring-line transition-colors hover:ring-brand disabled:opacity-50"
-      >
-        {state === "busy" ? "…" : "🔔 Zusätzlich Sofort-Push aufs Handy"}
-      </button>
-      {state === "error" && (
-        <p className="mt-1.5 text-xs text-muted">
-          Push konnte nicht aktiviert werden — die E-Mail-Benachrichtigung
-          funktioniert trotzdem.
-        </p>
-      )}
+    <div className="mt-6 rounded-xl bg-surface px-4 py-3 text-center">
+      <p className="text-sm font-medium">{title}</p>
+      {inner}
     </div>
   );
 }

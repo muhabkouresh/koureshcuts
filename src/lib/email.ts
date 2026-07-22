@@ -61,6 +61,8 @@ function calendarEvent(data: BookingEmailData): CalendarEvent {
     location: siteConfig.address,
     start: data.start,
     end: data.end,
+    // Stable per appointment: re-adding after a reschedule UPDATES the entry.
+    uid: `${data.id}@koureshcuts.de`,
   };
 }
 

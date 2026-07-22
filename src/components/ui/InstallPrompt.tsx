@@ -6,11 +6,19 @@ import { useEffect, useRef, useState } from "react";
 type BipEvent = Event & { prompt: () => Promise<void> };
 
 // Dismissible "install as app" hint. Android/Chrome gets a real install
-// button (native prompt); iOS Safari gets the share-sheet instructions.
-// Never shown inside an installed app or after being dismissed once.
+// button (native prompt); iOS Safari gets the share-sheet instructions; and
+// in-app browsers (Instagram, Facebook, TikTok …) — where installing is
+// impossible — get the "open in external browser first" how-to, since most
+// visitors arrive via the Instagram link. Never shown inside an installed
+// app or after being dismissed once.
 export default function InstallPrompt() {
-  const [mode, setMode] = useState<"hidden" | "android" | "ios">("hidden");
+  const [mode, setMode] = useState<"hidden" | "android" | "ios" | "inapp">(
+    "hidden",
+  );
   const bipRef = useRef<BipEvent | null>(null);
+  const isIos =
+    typeof navigator !== "undefined" &&
+    /iphone|ipad|ipod/i.test(navigator.userAgent);
 
   useEffect(() => {
     // Already running as an installed app?
@@ -34,12 +42,22 @@ export default function InstallPrompt() {
     window.addEventListener("beforeinstallprompt", onBip);
     window.addEventListener("appinstalled", onInstalled);
 
-    // iOS has no install event — show the how-to in Safari only (other iOS
-    // browsers can't add to the home screen).
     const ua = navigator.userAgent;
-    const isIos = /iphone|ipad|ipod/i.test(ua);
+    const iosDevice = /iphone|ipad|ipod/i.test(ua);
     const isSafari = /safari/i.test(ua) && !/crios|fxios|edgios|opt\//i.test(ua);
-    if (isIos && isSafari) {
+    // In-app browsers (Instagram & Co.) can't install PWAs at all — the
+    // visitor first has to hop to the real browser via ⋯ → "Im externen
+    // Browser öffnen". Most traffic comes from the Instagram bio link, so
+    // this is the hint people actually need.
+    const isInApp =
+      /instagram|fbav|fban|fb_iab|tiktok|musical_ly|snapchat|line\/|micromessenger/i.test(
+        ua,
+      );
+    if (isInApp) {
+      timer = setTimeout(() => setMode("inapp"), 2500);
+    } else if (iosDevice && isSafari) {
+      // iOS has no install event — show the how-to in Safari only (other iOS
+      // browsers can't add to the home screen).
       timer = setTimeout(() => setMode("ios"), 2500);
     }
 
@@ -87,6 +105,29 @@ export default function InstallPrompt() {
             <p className="mt-0.5 text-xs text-muted">
               Buche noch schneller — mit eigenem Icon auf deinem
               Home-Bildschirm.
+            </p>
+          ) : mode === "inapp" ? (
+            <p className="mt-0.5 text-xs leading-relaxed text-muted">
+              Du bist gerade im Instagram-Browser. Tippe oben rechts auf{" "}
+              <span className="font-medium text-foreground">⋯</span> und wähle{" "}
+              <span className="font-medium text-foreground">
+                „Im externen Browser öffnen“
+              </span>
+              {isIos ? (
+                <>
+                  {" "}
+                  — in Safari dann{" "}
+                  <span className="font-medium text-foreground">
+                    Teilen → „Zum Home-Bildschirm“
+                  </span>
+                  .
+                </>
+              ) : (
+                <>
+                  {" "}
+                  — dort kannst du die Seite dann als App installieren.
+                </>
+              )}
             </p>
           ) : (
             <p className="mt-0.5 text-xs leading-relaxed text-muted">

@@ -24,6 +24,9 @@ const subscribeSchema = z.object({
     .optional(),
   // Enables reminder pushes for this customer's booked appointments.
   email: z.string().email().max(200).optional(),
+  // Post-booking opt-in: ONLY reminder pushes, no "slot freed" radar
+  // messages. Stored with notifiedAt pre-set so both radar queries skip it.
+  reminderOnly: z.boolean().optional().default(false),
 });
 
 // GET /api/push — VAPID public key for client-side subscription.
@@ -52,12 +55,17 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Ungültige Eingabe." }, { status: 400 });
   }
 
-  const { subscription, date, email } = parsed.data;
+  const { subscription, date, email, reminderOnly } = parsed.data;
   // Noon keeps the instant safely inside the day across DST changes.
   const dateInstant = date
     ? zonedToUtc(date, 12 * 60, siteConfig.timezone)
     : null;
   const emailKey = email?.trim().toLowerCase() ?? "";
+  // reminderOnly devices carry their booked day + a pre-set notifiedAt: the
+  // day-watcher radar query requires notifiedAt null and the flexible query
+  // requires date null, so neither ever pushes "Termin frei" to them —
+  // reminder pushes (matched purely by email) still arrive.
+  const notifiedAt = reminderOnly ? new Date() : null;
 
   await prisma.customerPush.upsert({
     where: { endpoint: subscription.endpoint },
@@ -66,7 +74,10 @@ export async function POST(request: NextRequest) {
       auth: subscription.keys.auth,
       date: dateInstant,
       email: emailKey,
-      notifiedAt: null,
+      notifiedAt,
+      // Re-registering proves the device is alive — restart the 90-day
+      // cleanup clock instead of deleting an active subscriber.
+      createdAt: new Date(),
     },
     create: {
       endpoint: subscription.endpoint,
@@ -74,6 +85,7 @@ export async function POST(request: NextRequest) {
       auth: subscription.keys.auth,
       date: dateInstant,
       email: emailKey,
+      notifiedAt,
     },
   });
 

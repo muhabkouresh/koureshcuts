@@ -7,6 +7,13 @@ export type CalendarEvent = {
   location: string;
   start: Date;
   end: Date;
+  /**
+   * Stable identifier (e.g. "<appointmentId>@koureshcuts.de"). Without it a
+   * random UID is generated per download, so tapping the link twice — or
+   * after a reschedule — creates DUPLICATE events instead of updating the
+   * existing one. Always set this for appointment events.
+   */
+  uid?: string;
 };
 
 /** UTC date components (ics expects [year, month, day, hour, minute]). */
@@ -33,6 +40,10 @@ export function buildIcs(event: CalendarEvent): string {
     productId: siteConfig.name,
     calName: siteConfig.name,
     status: "CONFIRMED",
+    uid: event.uid,
+    // Monotonic SEQUENCE: a newer download of the same UID (e.g. after a
+    // reschedule) replaces the calendar entry instead of being ignored.
+    sequence: Math.floor(Date.now() / 1000),
   };
 
   const { error, value } = createEvent(attributes);
@@ -59,6 +70,8 @@ export function buildIcsFeed(events: CalendarEvent[]): string {
     productId: siteConfig.name,
     calName: `${siteConfig.name} Termine`,
     status: "CONFIRMED",
+    uid: event.uid,
+    sequence: Math.floor(Date.now() / 1000),
   }));
 
   const { error, value } = createEvents(attrs);
