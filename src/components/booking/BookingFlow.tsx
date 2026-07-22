@@ -13,7 +13,10 @@ import {
   monthLabel,
   toDateStr,
   todayInTz,
+  addDaysToDateStr,
+  longDateFromStr,
 } from "@/lib/time";
+import PushOptIn from "@/components/ui/PushOptIn";
 
 export type Service = {
   id: string;
@@ -619,11 +622,19 @@ export default function BookingFlow({ services }: { services: Service[] }) {
           />
 
           {service && !result.pending && (
-            <SecondSlotOffer
-              service={service}
-              firstEndIso={result.end}
-              bookerEmail={email}
-            />
+            <>
+              <SecondSlotOffer
+                service={service}
+                firstEndIso={result.end}
+                bookerEmail={email}
+              />
+              <FollowUpOffer
+                service={service}
+                startIso={result.start}
+                customerName={name}
+                customerEmail={email}
+              />
+            </>
           )}
         </div>
       )}
@@ -783,6 +794,170 @@ function SecondSlotOffer({
   );
 }
 
+// After a successful booking: offer the SAME slot exactly one week later, so
+// regulars lock in their rhythm in one tap. Falls back to other free times on
+// that day when the preferred one is taken; renders nothing if the day is
+// full or lies beyond the booking window.
+function FollowUpOffer({
+  service,
+  startIso,
+  customerName,
+  customerEmail,
+}: {
+  service: Service;
+  startIso: string;
+  customerName: string;
+  customerEmail: string;
+}) {
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [preferred, setPreferred] = useState<Slot | null>(null);
+  const [chosen, setChosen] = useState<string>("");
+  const [showAll, setShowAll] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState<Slot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const nextWeekDate = useMemo(
+    () => addDaysToDateStr(dateKey(new Date(startIso), tz), 7),
+    [startIso],
+  );
+  const wantedClock = formatClock(new Date(startIso), tz);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/availability?serviceId=${service.id}&date=${nextWeekDate}`, {
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        const free: Slot[] = d.slots ?? [];
+        setSlots(free);
+        setPreferred(
+          free.find((s) => formatClock(new Date(s.start), tz) === wantedClock) ??
+            null,
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [service.id, nextWeekDate, wantedClock]);
+
+  async function book(startValue: string) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId: service.id,
+          start: startValue,
+          customerName,
+          customerEmail,
+          notes: "",
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error ?? "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
+        // Slot just went away — drop it from the list.
+        if (res.status === 409) {
+          setSlots((prev) => prev.filter((s) => s.start !== startValue));
+          if (preferred?.start === startValue) setPreferred(null);
+        }
+        return;
+      }
+      setDone(
+        slots.find((s) => s.start === startValue) ?? {
+          start: startValue,
+          end: startValue,
+        },
+      );
+    } catch {
+      setError("Netzwerkfehler. Bitte erneut versuchen.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div className="mt-6 animate-fade-up rounded-2xl bg-emerald-50 px-5 py-4 text-left text-sm ring-1 ring-emerald-200">
+        <p className="font-semibold text-emerald-800">
+          ✓ Folgetermin gebucht —{" "}
+          {formatDateTimeLabel(new Date(done.start), tz)}
+        </p>
+        <p className="mt-1 text-emerald-700">
+          Die Bestätigung wurde an{" "}
+          <span className="font-medium">{customerEmail}</span> gesendet.
+        </p>
+      </div>
+    );
+  }
+
+  if (slots.length === 0) return null;
+
+  const others = slots.filter((s) => s.start !== preferred?.start);
+
+  return (
+    <div className="mt-4 rounded-2xl border border-line bg-surface p-5 text-left">
+      <p className="text-sm">
+        <span className="font-semibold text-foreground">
+          Gleich in einer Woche wiederkommen?
+        </span>{" "}
+        <span className="text-muted">
+          {preferred
+            ? `Am ${formatDateTimeLabel(new Date(preferred.start), tz)} ist dieselbe Zeit noch frei.`
+            : `Am ${longDateFromStr(nextWeekDate)} ist ${wantedClock} Uhr belegt — diese Zeiten sind noch frei.`}
+        </span>
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {preferred && (
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => book(preferred.start)}
+            className="rounded-full bg-foreground px-5 py-2 text-sm font-semibold text-background disabled:opacity-50"
+          >
+            {submitting ? "Wird gebucht…" : "Termin sichern"}
+          </button>
+        )}
+        {others.length > 0 &&
+          (showAll || !preferred ? (
+            <select
+              value={chosen}
+              onChange={(e) => {
+                setChosen(e.target.value);
+                if (e.target.value) void book(e.target.value);
+              }}
+              disabled={submitting}
+              className="rounded-full bg-background px-4 py-2 text-sm ring-1 ring-line disabled:opacity-50"
+            >
+              <option value="">Andere Uhrzeit wählen…</option>
+              {others.map((s) => (
+                <option key={s.start} value={s.start}>
+                  {formatClock(new Date(s.start), tz)} Uhr
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
+            >
+              Andere Uhrzeit
+            </button>
+          ))}
+      </div>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 // Visual progress indicator across the three booking steps.
 function Steps({ current }: { current: Step }) {
   const order: Step[] = ["service", "datetime", "details"];
@@ -847,18 +1022,6 @@ function Steps({ current }: { current: Step }) {
   );
 }
 
-// Shown when a chosen day is fully booked — lets the customer join a waitlist.
-// Web-Push payloads need the VAPID public key as a Uint8Array (backed by a
-// plain ArrayBuffer so it satisfies the DOM BufferSource type).
-function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
-  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(b64);
-  const out = new Uint8Array(new ArrayBuffer(raw.length));
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
-}
-
 function isIosDevice(): boolean {
   return (
     typeof navigator !== "undefined" &&
@@ -866,112 +1029,7 @@ function isIosDevice(): boolean {
   );
 }
 
-// "Termin-Radar": after joining the waitlist, offer an instant push to this
-// device the moment a slot frees up — faster than the waitlist email. The
-// email (when known) also enables reminder pushes for booked appointments.
-// With `reminderOnly` the device gets ONLY reminder pushes for its booked
-// appointments — no "slot freed" radar messages (post-booking opt-in).
-function PushOptIn({
-  date,
-  email,
-  reminderOnly = false,
-  title,
-  label = "🔔 Zusätzlich Sofort-Push aufs Handy",
-  activeText = "🔔 Termin-Radar aktiv — du bekommst sofort eine Push-Nachricht auf diesem Gerät, wenn etwas frei wird.",
-}: {
-  date?: string;
-  email?: string;
-  reminderOnly?: boolean;
-  /** Renders the opt-in inside its own highlighted box with this heading. */
-  title?: string;
-  label?: string;
-  activeText?: string;
-}) {
-  const [supported, setSupported] = useState(false);
-  const [state, setState] = useState<"idle" | "busy" | "on" | "error">("idle");
-
-  /* eslint-disable react-hooks/set-state-in-effect -- one-time client-only feature detection (browser APIs unavailable during SSR) */
-  useEffect(() => {
-    setSupported(
-      typeof window !== "undefined" &&
-        "serviceWorker" in navigator &&
-        "PushManager" in window &&
-        "Notification" in window,
-    );
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  if (!supported) return null;
-
-  async function enable() {
-    setState("busy");
-    try {
-      const conf = await fetch("/api/push").then((r) => r.json());
-      if (!conf.enabled || !conf.publicKey) {
-        setState("error");
-        return;
-      }
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setState("error");
-        return;
-      }
-      const reg = await navigator.serviceWorker.ready;
-      const sub =
-        (await reg.pushManager.getSubscription()) ??
-        (await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(conf.publicKey),
-        }));
-      const res = await fetch("/api/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subscription: sub.toJSON(),
-          date,
-          email,
-          reminderOnly,
-        }),
-      });
-      setState(res.ok ? "on" : "error");
-    } catch {
-      setState("error");
-    }
-  }
-
-  const inner =
-    state === "on" ? (
-      <p className="mt-2 text-xs font-medium text-brand-700">{activeText}</p>
-    ) : (
-      <div className="mt-2">
-        <button
-          type="button"
-          disabled={state === "busy"}
-          onClick={enable}
-          className="rounded-full bg-background px-4 py-2 text-xs font-semibold ring-1 ring-line transition-colors hover:ring-brand disabled:opacity-50"
-        >
-          {state === "busy" ? "…" : label}
-        </button>
-        {state === "error" && (
-          <p className="mt-1.5 text-xs text-muted">
-            Push konnte nicht aktiviert werden — die E-Mail-Benachrichtigung
-            funktioniert trotzdem.
-          </p>
-        )}
-      </div>
-    );
-
-  if (!title) return inner;
-  // Boxed variant (post-booking): renders nothing at all when push is
-  // unsupported, so no empty box appears (early return above).
-  return (
-    <div className="mt-6 rounded-xl bg-surface px-4 py-3 text-center">
-      <p className="text-sm font-medium">{title}</p>
-      {inner}
-    </div>
-  );
-}
-
+// Shown when a chosen day is fully booked — lets the customer join a waitlist.
 function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");

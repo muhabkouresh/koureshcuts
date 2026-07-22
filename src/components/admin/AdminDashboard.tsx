@@ -335,7 +335,9 @@ export default function AdminDashboard({
           onChange={() => router.refresh()}
         />
       )}
-      {tab === "umsatz" && <UmsatzTab revenue={data.revenue} />}
+      {tab === "umsatz" && (
+        <UmsatzTab revenue={data.revenue} onChange={() => router.refresh()} />
+      )}
       {tab === "statistik" && <StatistikTab />}
       {tab === "services" && <ServicesTab onChange={() => router.refresh()} />}
       {tab === "verfuegbarkeit" && (
@@ -3200,11 +3202,18 @@ function FeedBox({ feedUrl }: { feedUrl: string }) {
 
 /* ----------------------------------- Umsatz --------------------------------- */
 
-function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
+function UmsatzTab({
+  revenue,
+  onChange,
+}: {
+  revenue: RevenueStats;
+  onChange: () => void;
+}) {
   return (
     <div className="mt-6 flex flex-col gap-6">
       <p className="text-xs text-muted">
-        Umsatz aus wahrgenommenen Terminen (alle vergangenen, nicht stornierten).
+        Umsatz aus wahrgenommenen Terminen (alle vergangenen, nicht
+        stornierten) plus eingetragene Produktverkäufe.
       </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <RevenueStat label="Diese Woche" value={priceFull(revenue.thisWeekCents)} />
@@ -3242,6 +3251,8 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
           </p>
         </div>
       </div>
+      <ProductSalesCard revenue={revenue} onChange={onChange} />
+
       <BarChart title="Pro Woche" data={revenue.weeks} />
       <BarChart title="Pro Monat" data={revenue.months} />
 
@@ -3261,6 +3272,178 @@ function UmsatzTab({ revenue }: { revenue: RevenueStats }) {
         </p>
       </div>
     </div>
+  );
+}
+
+type ProductSale = {
+  id: string;
+  date: string;
+  amountCents: number;
+  note: string;
+};
+
+// Manually logged product sales (wax, shampoo, …). They flow into every
+// revenue figure and chart, so the Umsatz tab shows the full takings.
+function ProductSalesCard({
+  revenue,
+  onChange,
+}: {
+  revenue: RevenueStats;
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [sales, setSales] = useState<ProductSale[] | null>(null);
+  const [date, setDate] = useState(() => todayInTz(tz));
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  function load() {
+    fetch("/api/admin/product-sales")
+      .then((r) => r.json())
+      .then((d) => setSales(d.sales ?? []))
+      .catch(() => setSales([]));
+  }
+
+  useEffect(() => {
+    if (open && sales === null) load();
+  }, [open, sales]);
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    const cents = inputToCents(amount);
+    if (cents === null || cents <= 0) {
+      setMsg("Bitte einen gültigen Betrag eingeben.");
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/product-sales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, amountCents: cents, note: note.trim() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg(d.error ?? "Fehler.");
+        return;
+      }
+      setAmount("");
+      setNote("");
+      setMsg(`${priceFull(cents)} eingetragen.`);
+      load();
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    if (!window.confirm("Diesen Eintrag löschen?")) return;
+    setBusy(true);
+    try {
+      await fetch(`/api/admin/product-sales?id=${id}`, { method: "DELETE" });
+      load();
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">Produktverkäufe</h2>
+          <p className="mt-1 text-xs text-muted">
+            Diese Woche {priceFull(revenue.productWeekCents)} · diesen Monat{" "}
+            {priceFull(revenue.productMonthCents)} · gesamt{" "}
+            {priceFull(revenue.productTotalCents)} — bereits in allen Zahlen
+            oben enthalten.
+          </p>
+        </div>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="shrink-0 rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background"
+        >
+          {open ? "Schließen" : "+ Produktumsatz"}
+        </button>
+      </div>
+
+      {open && (
+        <>
+          <form onSubmit={add} className="mt-4 flex flex-wrap items-end gap-2">
+            <div className="w-[11rem]">
+              <DatePicker value={date} onChange={setDate} />
+            </div>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Betrag z. B. 12,50"
+              className="w-32 rounded-lg border border-line bg-background px-3 py-2 text-sm"
+            />
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={120}
+              placeholder="Notiz (optional, z. B. Wax)"
+              className="min-w-0 flex-1 rounded-lg border border-line bg-background px-3 py-2 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={busy}
+              className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {busy ? "…" : "Eintragen"}
+            </button>
+            {msg && <span className="text-xs text-muted">{msg}</span>}
+          </form>
+
+          {sales === null ? (
+            <p className="mt-3 text-sm text-muted">Lädt…</p>
+          ) : sales.length === 0 ? (
+            <p className="mt-3 rounded-lg bg-surface px-3 py-3 text-sm text-muted">
+              Noch keine Produktverkäufe eingetragen.
+            </p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-1.5">
+              {sales.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0">
+                    <span className="font-semibold">
+                      {priceFull(s.amountCents)}
+                    </span>
+                    <span className="ml-2 text-muted">
+                      {formatDateLabel(new Date(s.date), tz)}
+                    </span>
+                    {s.note && (
+                      <span className="ml-2 truncate text-muted">
+                        · {s.note}
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    onClick={() => remove(s.id)}
+                    disabled={busy}
+                    className="shrink-0 text-xs text-muted underline underline-offset-4 hover:text-red-600 disabled:opacity-50"
+                  >
+                    Löschen
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

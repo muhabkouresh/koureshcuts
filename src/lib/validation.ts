@@ -68,6 +68,17 @@ export const delayLogSchema = z.object({
   note: z.string().trim().max(200).optional().default(""),
 });
 
+// Manually logged product sale (admin Umsatz tab).
+export const productSaleSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ungültiges Datum."),
+  amountCents: z
+    .number()
+    .int()
+    .min(1, "Betrag muss größer als 0 sein.")
+    .max(1_000_000),
+  note: z.string().trim().max(120).optional().default(""),
+});
+
 // Customer requests a magic link listing their appointments.
 export const myAppointmentsRequestSchema = z.object({
   email: z.string().trim().email("Gültige E-Mail eingeben.").max(200),

@@ -17,6 +17,11 @@ export type RevenueStats = {
   totalCents: number;
   thisWeekCents: number;
   thisMonthCents: number;
+  // Manually logged product sales (see ProductSale), same buckets. Included
+  // in the totals above so every figure is the full takings.
+  productTotalCents: number;
+  productWeekCents: number;
+  productMonthCents: number;
   // No-shows: past appointments explicitly marked "nicht erschienen".
   noShowCount: number;
   noShowCents: number;
@@ -43,7 +48,15 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     select: { startTime: true, service: { select: { priceCents: true } } },
   });
 
-  const totalCents = rows.reduce((s, r) => s + r.service.priceCents, 0);
+  // Product sales are logged manually and count toward every bucket.
+  const productRows = await prisma.productSale.findMany({
+    select: { date: true, amountCents: true },
+  });
+
+  const totalCents =
+    rows.reduce((s, r) => s + r.service.priceCents, 0) +
+    productRows.reduce((s, r) => s + r.amountCents, 0);
+  const productTotalCents = productRows.reduce((s, r) => s + r.amountCents, 0);
 
   // No-shows are counted separately (lost revenue), not part of the buckets.
   const noShowRows = await prisma.appointment.findMany({
@@ -106,6 +119,17 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     if (monthMap.has(mk))
       monthMap.set(mk, monthMap.get(mk)! + r.service.priceCents);
   }
+  // Product sales land in the same buckets, so the charts show total takings.
+  let productWeekCents = 0;
+  let productMonthCents = 0;
+  for (const p of productRows) {
+    const wk = mondayOf(dateKey(p.date, tz));
+    if (weekMap.has(wk)) weekMap.set(wk, weekMap.get(wk)! + p.amountCents);
+    if (wk === currentMonday) productWeekCents += p.amountCents;
+    const mk = formatInTimeZone(p.date, tz, "yyyy-MM");
+    if (monthMap.has(mk)) monthMap.set(mk, monthMap.get(mk)! + p.amountCents);
+    if (mk === curMonthKey) productMonthCents += p.amountCents;
+  }
 
   const weeks: RevenueBucket[] = weekStarts.map((w) => ({
     label: formatInTimeZone(new Date(`${w}T12:00:00Z`), "UTC", "dd.MM."),
@@ -124,6 +148,9 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     totalCents,
     thisWeekCents: weekMap.get(currentMonday) ?? 0,
     thisMonthCents: monthMap.get(curMonthKey) ?? 0,
+    productTotalCents,
+    productWeekCents,
+    productMonthCents,
     noShowCount,
     noShowCents,
     expectedCents,

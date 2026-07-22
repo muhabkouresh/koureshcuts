@@ -183,6 +183,19 @@ model PageView {
   @@index([day])
 }
 
+/// A manually logged product sale (wax, shampoo, …) so the Umsatz tab shows
+/// the full picture, not just services. `date` is the start-of-day UTC
+/// instant for the shop timezone.
+model ProductSale {
+  id         String   @id @default(cuid())
+  date       DateTime
+  amountCents Int
+  note       String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([date])
+}
+
 /// An email that Resend refused to send (e.g. the free-plan daily limit).
 /// Stored fully rendered so the daily 07:00 cron — or the admin's "retry now"
 /// button — can resend it verbatim. Rows are pruned after 14 days; after 4

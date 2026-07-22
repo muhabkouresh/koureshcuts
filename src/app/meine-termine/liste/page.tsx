@@ -7,6 +7,7 @@ import { priceFull } from "@/lib/format";
 import { ACTIVE_STATUSES } from "@/lib/constants";
 import RememberDevice from "./RememberDevice";
 import WaitlistSection from "./WaitlistSection";
+import PushOptIn from "@/components/ui/PushOptIn";
 
 const WEEKDAY_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
@@ -178,6 +179,17 @@ export default async function MyAppointmentsListPage({
                   </li>
                 ))}
               </ul>
+            )}
+
+            {appointments.length > 0 && (
+              <PushOptIn
+                reminderOnly
+                email={email}
+                title="Erinnerung auch als Push aufs Handy?"
+                label="🔔 Push-Erinnerung aktivieren"
+                activeText="🔔 Aktiv — deine Termin-Erinnerung kommt zusätzlich als Push auf dieses Gerät."
+                hint="iPhone: funktioniert nur, wenn du die Seite über „Teilen → Zum Home-Bildschirm“ als App hinzugefügt hast."
+              />
             )}
 
             <WaitlistSection
