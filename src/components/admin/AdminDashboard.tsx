@@ -1557,9 +1557,18 @@ function DaySlots({
     }
   }
 
+  // Open ranges for the day: an extra day (SpecialDay) ADDS its hours to the
+  // weekly template rather than replacing them, mirroring the public engine —
+  // otherwise an extra morning block would hide the day's normal afternoon
+  // slots in this grid too (the 14:30 bug).
   const dayHours = hours.find((h) => h.dayOfWeek === weekdayOf(date));
-  const openMin = special ? special.openMinute : (dayHours?.openMinute ?? 0);
-  const closeMin = special ? special.closeMinute : (dayHours?.closeMinute ?? 0);
+  const ranges: Array<[number, number]> = [];
+  if (special && special.closeMinute > special.openMinute) {
+    ranges.push([special.openMinute, special.closeMinute]);
+  }
+  if (dayHours && !dayHours.isClosed && dayHours.closeMinute > dayHours.openMinute) {
+    ranges.push([dayHours.openMinute, dayHours.closeMinute]);
+  }
 
   type SlotCell = {
     hhmm: string;
@@ -1569,27 +1578,34 @@ function DaySlots({
     label?: string;
   };
   const cells: SlotCell[] = [];
-  for (
-    let m = openMin;
-    m + SLOT_INTERVAL_MINUTES <= closeMin;
-    m += SLOT_INTERVAL_MINUTES
-  ) {
-    const start = zonedToUtc(date, m, tz);
-    const endMs = start.getTime() + SLOT_INTERVAL_MINUTES * 60_000;
-    const startMs = start.getTime();
-    const appt = appointments.find(
-      (a) =>
-        a.status !== "CANCELLED" &&
-        a.status !== "NO_SHOW" &&
-        new Date(a.start).getTime() < endMs &&
-        new Date(a.end).getTime() > startMs,
-    );
-    const hhmm = minutesToHHMM(m);
-    if (!appt) cells.push({ hhmm, startMs, state: "free" });
-    else if (appt.status === "BLOCKED")
-      cells.push({ hhmm, startMs, state: "blocked", apptId: appt.id });
-    else cells.push({ hhmm, startMs, state: "booked", label: appt.customerName });
+  const seenMin = new Set<number>();
+  for (const [openMin, closeMin] of ranges) {
+    for (
+      let m = openMin;
+      m + SLOT_INTERVAL_MINUTES <= closeMin;
+      m += SLOT_INTERVAL_MINUTES
+    ) {
+      if (seenMin.has(m)) continue; // overlapping ranges → one cell per time
+      seenMin.add(m);
+      const start = zonedToUtc(date, m, tz);
+      const endMs = start.getTime() + SLOT_INTERVAL_MINUTES * 60_000;
+      const startMs = start.getTime();
+      const appt = appointments.find(
+        (a) =>
+          a.status !== "CANCELLED" &&
+          a.status !== "NO_SHOW" &&
+          new Date(a.start).getTime() < endMs &&
+          new Date(a.end).getTime() > startMs,
+      );
+      const hhmm = minutesToHHMM(m);
+      if (!appt) cells.push({ hhmm, startMs, state: "free" });
+      else if (appt.status === "BLOCKED")
+        cells.push({ hhmm, startMs, state: "blocked", apptId: appt.id });
+      else
+        cells.push({ hhmm, startMs, state: "booked", label: appt.customerName });
+    }
   }
+  cells.sort((a, b) => a.startMs - b.startMs);
 
   if (cells.length === 0) return null;
 

@@ -59,24 +59,25 @@ function computeSlots(
   const dayStartUtc = zonedToUtc(dateStr, 0, tz);
   const dayEndUtc = zonedToUtc(dateStr, 24 * 60, tz);
 
-  // An extra working day (public) overrides the weekly template and opens the
-  // date with its own hours, even if that weekday is normally closed.
+  // Open ranges for the day. A public extra day (SpecialDay) ADDS its hours
+  // rather than replacing the weekly template: on a weekday that is already
+  // open, BOTH ranges apply — e.g. a 12:30–14:00 extra block plus the normal
+  // 14:00–17:00 hours means the shop is open 12:30–17:00. Treating the special
+  // day as a full override would silently shrink the day to 12:30–14:00 and
+  // hide every later slot (the 14:30 bug). On a normally-closed weekday only
+  // the special range applies.
   const special = specialDays.find(
     (s) => s.date >= dayStartUtc && s.date < dayEndUtc,
   );
-  let openMinute: number;
-  let closeMinute: number;
-  if (special) {
-    openMinute = special.openMinute;
-    closeMinute = special.closeMinute;
-  } else {
-    const hours = hoursByDay.get(weekdayOf(dateStr));
-    if (!hours || hours.isClosed || hours.closeMinute <= hours.openMinute) {
-      return [];
-    }
-    openMinute = hours.openMinute;
-    closeMinute = hours.closeMinute;
+  const ranges: Array<[number, number]> = [];
+  if (special && special.closeMinute > special.openMinute) {
+    ranges.push([special.openMinute, special.closeMinute]);
   }
+  const hours = hoursByDay.get(weekdayOf(dateStr));
+  if (hours && !hours.isClosed && hours.closeMinute > hours.openMinute) {
+    ranges.push([hours.openMinute, hours.closeMinute]);
+  }
+  if (ranges.length === 0) return [];
 
   // Full-day time-off covering this date blocks everything (overrides extra days).
   const blocked = timeOffs.some(
@@ -85,21 +86,29 @@ function computeSlots(
   if (blocked) return [];
 
   const slots: Slot[] = [];
-  const lastStartMinute = closeMinute - duration;
-  for (
-    let minute = openMinute;
-    minute <= lastStartMinute;
-    minute += SLOT_INTERVAL_MINUTES
-  ) {
-    const start = zonedToUtc(dateStr, minute, tz);
-    const end = new Date(start.getTime() + duration * 60_000);
-    if (start < minStart) continue;
-    // Extra working days are bookable regardless of the normal booking window.
-    if (!special && start > windowEnd) continue;
-    if (appointments.some((a) => overlaps(start, end, a.startTime, a.endTime)))
-      continue;
-    slots.push({ start: start.toISOString(), end: end.toISOString() });
+  const seen = new Set<string>();
+  for (const [openMinute, closeMinute] of ranges) {
+    const lastStartMinute = closeMinute - duration;
+    for (
+      let minute = openMinute;
+      minute <= lastStartMinute;
+      minute += SLOT_INTERVAL_MINUTES
+    ) {
+      const start = zonedToUtc(dateStr, minute, tz);
+      const end = new Date(start.getTime() + duration * 60_000);
+      if (start < minStart) continue;
+      // A date with an extra-day marker is bookable regardless of the normal
+      // booking window (the owner explicitly opened it).
+      if (!special && start > windowEnd) continue;
+      const key = start.toISOString();
+      if (seen.has(key)) continue; // overlapping ranges → dedupe by start
+      if (appointments.some((a) => overlaps(start, end, a.startTime, a.endTime)))
+        continue;
+      seen.add(key);
+      slots.push({ start: key, end: end.toISOString() });
+    }
   }
+  slots.sort((a, b) => a.start.localeCompare(b.start));
   return slots;
 }
 
