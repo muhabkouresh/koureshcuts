@@ -252,7 +252,7 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
     `<div style="text-align:center">
        <div style="width:56px;height:56px;border-radius:50%;background:#1f9d3b;margin:8px auto 18px;line-height:56px;color:#fff;font-size:28px;font-weight:700">&#10003;</div>
        <h2 style="margin:0;font-size:22px;font-weight:700">Dein Termin wurde bestätigt</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>Vielen Dank. Dein Termin wurde bestätigt.</p>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${escapeHtml(data.customerName)},<br/>Vielen Dank. Dein Termin wurde bestätigt.</p>
        <div style="margin:22px 0 8px">
          <a href="${rescheduleUrl(data.id)}" style="display:inline-block;background:#8a1f2b;border:1px solid #8a1f2b;color:#fff;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700;margin:0 4px 8px">Termin verschieben</a>
          <a href="${cancelUrl(data.id)}" style="display:inline-block;background:#fff;border:1px solid #d6d3d1;color:#18181b;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700;margin:0 4px 8px">Termin stornieren</a>
@@ -282,11 +282,11 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
     const ownerHtml = layout(
       "Neue Buchung",
       `${detailsTable(data)}
-       <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${data.customerName} · ${data.customerEmail}</p>`,
+       <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${escapeHtml(data.customerName)} · ${data.customerEmail}</p>`,
     );
     await send({
       to: siteConfig.ownerEmail,
-      subject: `Neue Buchung: ${data.customerName} — ${data.serviceName}`,
+      subject: `Neue Buchung: ${escapeHtml(data.customerName)} — ${data.serviceName}`,
       html: ownerHtml,
     });
   }
@@ -318,7 +318,7 @@ export async function sendWaitlistJoinedEmails(
     `<div style="text-align:center">
        <div style="width:56px;height:56px;border-radius:50%;background:#8a1f2b;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">&#9203;</div>
        <h2 style="margin:0;font-size:21px;font-weight:700">Du stehst auf der Warteliste</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${escapeHtml(data.customerName)},<br/>
        ${bodyText}</p>
      </div>`,
   );
@@ -337,11 +337,11 @@ export async function sendWaitlistJoinedEmails(
          <tr><td style="padding:8px 0;color:#888">Service</td><td style="padding:8px 0;text-align:right;font-weight:600">${data.serviceName}</td></tr>
          <tr><td style="padding:8px 0;color:#888">Wunschtag</td><td style="padding:8px 0;text-align:right;font-weight:600">${day ?? "Flexibel (nächster freier Termin)"}</td></tr>
        </table>
-       <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${data.customerName} · ${data.customerEmail}</p>`,
+       <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${escapeHtml(data.customerName)} · ${data.customerEmail}</p>`,
     );
     await send({
       to: siteConfig.ownerEmail,
-      subject: `Warteliste: ${data.customerName} — ${data.serviceName}${day ? ` (${day})` : ""}`,
+      subject: `Warteliste: ${escapeHtml(data.customerName)} — ${data.serviceName}${day ? ` (${day})` : ""}`,
       html: ownerHtml,
     });
   }
@@ -357,7 +357,7 @@ export async function sendWaitlistSpotEmail(
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   const html = layout(
     "Ein Platz ist frei geworden!",
-    `<p style="font-size:14px;color:#444">Hallo ${data.customerName},<br/>
+    `<p style="font-size:14px;color:#444">Hallo ${escapeHtml(data.customerName)},<br/>
        gute Nachrichten — für <strong>${data.serviceName}</strong>${day ? ` am <strong>${day}</strong>` : ""} ist ein Termin frei geworden.
        Sei schnell und sichere ihn dir:</p>
      <div style="margin:22px 0 8px;text-align:center">
@@ -377,7 +377,7 @@ export async function sendWaitlistSpotEmail(
 export async function sendReminderEmail(data: BookingEmailData): Promise<void> {
   const html = layout(
     "Termin-Erinnerung",
-    `<p style="font-size:14px;color:#444">Hallo ${data.customerName}, das ist eine Erinnerung an deinen Termin:</p>
+    `<p style="font-size:14px;color:#444">Hallo ${escapeHtml(data.customerName)}, das ist eine Erinnerung an deinen Termin:</p>
      ${detailsTable(data)}
      <div style="margin-top:20px">
        <a href="${rescheduleUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;margin:0 6px 8px 0">Termin verschieben</a>
@@ -417,7 +417,7 @@ export async function sendRescheduleEmails(
     `<div style="text-align:center">
        <div style="width:56px;height:56px;border-radius:50%;background:#1f9d3b;margin:8px auto 18px;line-height:56px;color:#fff;font-size:28px;font-weight:700">&#10003;</div>
        <h2 style="margin:0;font-size:22px;font-weight:700">Dein Termin wurde verschoben</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>dein Termin wurde erfolgreich auf die neue Zeit verschoben.</p>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${escapeHtml(data.customerName)},<br/>dein Termin wurde erfolgreich auf die neue Zeit verschoben.</p>
      </div>
      <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
      <table style="width:100%;border-collapse:collapse;font-size:14px">
@@ -452,11 +452,11 @@ export async function sendRescheduleEmails(
          <tr><td style="padding:8px 0;color:#888">Jetzt</td><td style="padding:8px 0;text-align:right;font-weight:700">${formatDateTimeLabel(data.start, tz)}</td></tr>
          <tr><td style="padding:8px 0;color:#888">Service</td><td style="padding:8px 0;text-align:right;font-weight:600">${data.serviceName}</td></tr>
        </table>
-       <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${data.customerName} · ${data.customerEmail}</p>`,
+       <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${escapeHtml(data.customerName)} · ${data.customerEmail}</p>`,
     );
     await send({
       to: siteConfig.ownerEmail,
-      subject: `Verschoben: ${data.customerName} — ${data.serviceName}`,
+      subject: `Verschoben: ${escapeHtml(data.customerName)} — ${data.serviceName}`,
       html: ownerHtml,
     });
   }
@@ -493,7 +493,7 @@ export async function sendShopRescheduleEmail(
     `<div style="text-align:center">
        <div style="width:56px;height:56px;border-radius:50%;background:#b45309;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">&#8644;</div>
        <h2 style="margin:0;font-size:21px;font-weight:700">Dein Termin wurde verlegt</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${escapeHtml(data.customerName)},<br/>
        wir mussten deinen Termin leider auf eine neue Zeit verlegen. Hier sind die Details:</p>
        ${reasonRow}
      </div>
@@ -554,7 +554,7 @@ export async function sendWinbackEmail(
     `<div style="text-align:center">
        <div style="font-size:44px;margin:8px 0 14px">💈</div>
        <h2 style="margin:0;font-size:21px;font-weight:700">Zeit für einen frischen Schnitt?</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${customerName},<br/>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${escapeHtml(customerName)},<br/>
        dein letzter Besuch bei uns ist schon eine Weile her — dein Barber vermisst dich!
        Sichere dir jetzt wieder einen Termin, bevor die besten Zeiten weg sind.</p>
      </div>
@@ -569,7 +569,7 @@ export async function sendWinbackEmail(
   );
   return send({
     to: customerEmail,
-    subject: `Zeit für einen frischen Schnitt, ${customerName}? 💈`,
+    subject: `Zeit für einen frischen Schnitt, ${escapeHtml(customerName)}? 💈`,
     html,
   });
 }
@@ -588,7 +588,7 @@ export async function sendBookingRequestEmail(
     `<div style="text-align:center">
        <div style="width:56px;height:56px;border-radius:50%;background:#b45309;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">⏳</div>
        <h2 style="margin:0;font-size:21px;font-weight:700">Deine Anfrage ist eingegangen</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${escapeHtml(data.customerName)},<br/>
        wir haben deine Terminanfrage erhalten und den Platz für dich reserviert.
        Sobald wir sie bestätigt haben, bekommst du die endgültige Bestätigung per E-Mail.</p>
      </div>
@@ -713,7 +713,7 @@ export async function sendShopCancellationEmail(
     `<div style="text-align:center">
        <div style="width:56px;height:56px;border-radius:50%;background:#b91c1c;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">&#10005;</div>
        <h2 style="margin:0;font-size:21px;font-weight:700">Dein Termin wurde leider abgesagt</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${escapeHtml(data.customerName)},<br/>
        wir müssen deinen Termin leider absagen. Das tut uns sehr leid!</p>
        ${reasonRow}
      </div>
@@ -747,7 +747,7 @@ export async function sendDelayEmail(
     `<div style="text-align:center">
        <div style="width:56px;height:56px;border-radius:50%;background:#d97706;margin:8px auto 18px;line-height:56px;color:#fff;font-size:26px;font-weight:700">&#8987;</div>
        <h2 style="margin:0;font-size:21px;font-weight:700">Es verschiebt sich etwas</h2>
-       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${data.customerName},<br/>
+       <p style="font-size:14px;color:#555;margin:14px 0 0">Hallo ${escapeHtml(data.customerName)},<br/>
        kurze Info zu deinem heutigen Termin (<strong>${data.serviceName}</strong>, ${when}):<br/>
        Es kommt heute leider zu einer Verzögerung von etwa <strong>${minutes} Minuten</strong>.</p>
        <p style="font-size:14px;color:#555;margin:14px 0 0">Dein Termin bleibt bestehen — komm einfach entsprechend später. Danke für dein Verständnis!</p>
@@ -795,11 +795,11 @@ export async function sendCancellationNotice(
     `<p style="font-size:14px;color:#444">Ein Kunde hat seinen Termin storniert – der Slot ist wieder frei:</p>
      ${detailsTable(data)}
      ${reasonRow}
-     <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${data.customerName}${data.customerEmail ? ` · ${data.customerEmail}` : ""}</p>`,
+     <p style="font-size:13px;color:#888;margin-top:16px">Kunde: ${escapeHtml(data.customerName)}${data.customerEmail ? ` · ${data.customerEmail}` : ""}</p>`,
   );
   await send({
     to: siteConfig.ownerEmail,
-    subject: `Storniert: ${data.customerName} — ${data.serviceName}`,
+    subject: `Storniert: ${escapeHtml(data.customerName)} — ${data.serviceName}`,
     html,
   });
 }

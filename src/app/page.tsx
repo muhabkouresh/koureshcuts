@@ -3,14 +3,13 @@ import { formatInTimeZone } from "date-fns-tz";
 import { de } from "date-fns/locale";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
-import { getNextFreeSlot } from "@/lib/availability";
-import { formatDateTimeLabel, nowMs } from "@/lib/time";
+import { nowMs } from "@/lib/time";
 import BookingFlow, { type Service } from "@/components/booking/BookingFlow";
 import SiteHeader from "@/components/ui/SiteHeader";
 import Reveal from "@/components/ui/Reveal";
 import ScrollLink from "@/components/ui/ScrollLink";
 import InstallPrompt from "@/components/ui/InstallPrompt";
-import QuickBook from "@/components/ui/QuickBook";
+import NextSlotTeaser from "@/components/ui/NextSlotTeaser";
 
 // Serve the landing shell from cache and refresh it in the background every
 // 60s (ISR) instead of hitting Neon on every visit (force-dynamic). Services
@@ -96,14 +95,6 @@ export default async function Home() {
     (c) => c.emergency && c.startDate.getTime() <= nowMs(),
   );
   const plannedClosures = closures.filter((c) => c !== emergencyNow);
-  let nextSlot: string | null = null;
-  if (services[0]) {
-    try {
-      nextSlot = (await getNextFreeSlot(services[0].id))?.start ?? null;
-    } catch (err) {
-      console.error("next free slot failed", err);
-    }
-  }
 
   return (
     <>
@@ -181,13 +172,7 @@ export default async function Home() {
             </span>
           </div>
 
-          {nextSlot && services[0] && (
-            <QuickBook
-              serviceId={services[0].id}
-              start={nextSlot}
-              label={formatDateTimeLabel(new Date(nextSlot), siteConfig.timezone)}
-            />
-          )}
+          {services[0] && <NextSlotTeaser />}
         </div>
 
         {/* Scroll hint */}
