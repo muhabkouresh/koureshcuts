@@ -22,6 +22,10 @@ export type RevenueStats = {
   productTotalCents: number;
   productWeekCents: number;
   productMonthCents: number;
+  // Manually logged tips (Trinkgeld), same buckets, also in the totals.
+  tipTotalCents: number;
+  tipWeekCents: number;
+  tipMonthCents: number;
   // No-shows: past appointments explicitly marked "nicht erschienen".
   noShowCount: number;
   noShowCents: number;
@@ -48,15 +52,18 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     select: { startTime: true, service: { select: { priceCents: true } } },
   });
 
-  // Product sales are logged manually and count toward every bucket.
-  const productRows = await prisma.productSale.findMany({
-    select: { date: true, amountCents: true },
+  // Product sales and tips are logged manually and count toward every bucket.
+  const manualRows = await prisma.productSale.findMany({
+    select: { date: true, amountCents: true, kind: true },
   });
+  const productRows = manualRows.filter((r) => r.kind !== "tip");
+  const tipRows = manualRows.filter((r) => r.kind === "tip");
 
   const totalCents =
     rows.reduce((s, r) => s + r.service.priceCents, 0) +
-    productRows.reduce((s, r) => s + r.amountCents, 0);
+    manualRows.reduce((s, r) => s + r.amountCents, 0);
   const productTotalCents = productRows.reduce((s, r) => s + r.amountCents, 0);
+  const tipTotalCents = tipRows.reduce((s, r) => s + r.amountCents, 0);
 
   // No-shows are counted separately (lost revenue), not part of the buckets.
   const noShowRows = await prisma.appointment.findMany({
@@ -119,16 +126,25 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     if (monthMap.has(mk))
       monthMap.set(mk, monthMap.get(mk)! + r.service.priceCents);
   }
-  // Product sales land in the same buckets, so the charts show total takings.
+  // Manual income lands in the same buckets, so the charts show total takings.
   let productWeekCents = 0;
   let productMonthCents = 0;
-  for (const p of productRows) {
+  let tipWeekCents = 0;
+  let tipMonthCents = 0;
+  for (const p of manualRows) {
     const wk = mondayOf(dateKey(p.date, tz));
     if (weekMap.has(wk)) weekMap.set(wk, weekMap.get(wk)! + p.amountCents);
-    if (wk === currentMonday) productWeekCents += p.amountCents;
     const mk = formatInTimeZone(p.date, tz, "yyyy-MM");
     if (monthMap.has(mk)) monthMap.set(mk, monthMap.get(mk)! + p.amountCents);
-    if (mk === curMonthKey) productMonthCents += p.amountCents;
+    const isTip = p.kind === "tip";
+    if (wk === currentMonday) {
+      if (isTip) tipWeekCents += p.amountCents;
+      else productWeekCents += p.amountCents;
+    }
+    if (mk === curMonthKey) {
+      if (isTip) tipMonthCents += p.amountCents;
+      else productMonthCents += p.amountCents;
+    }
   }
 
   const weeks: RevenueBucket[] = weekStarts.map((w) => ({
@@ -151,6 +167,9 @@ export async function getRevenueStats(): Promise<RevenueStats> {
     productTotalCents,
     productWeekCents,
     productMonthCents,
+    tipTotalCents,
+    tipWeekCents,
+    tipMonthCents,
     noShowCount,
     noShowCents,
     expectedCents,

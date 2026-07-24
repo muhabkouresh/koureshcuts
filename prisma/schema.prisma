@@ -183,13 +183,14 @@ model PageView {
   @@index([day])
 }
 
-/// A manually logged product sale (wax, shampoo, …) so the Umsatz tab shows
-/// the full picture, not just services. `date` is the start-of-day UTC
-/// instant for the shop timezone.
+/// A manually logged extra income entry so the Umsatz tab shows the full
+/// picture, not just services. `kind` is "product" (wax, shampoo, …) or "tip"
+/// (Trinkgeld). `date` is the start-of-day UTC instant for the shop timezone.
 model ProductSale {
   id         String   @id @default(cuid())
   date       DateTime
   amountCents Int
+  kind       String   @default("product")
   note       String   @default("")
   createdAt  DateTime @default(now())
 

@@ -68,7 +68,7 @@ export const delayLogSchema = z.object({
   note: z.string().trim().max(200).optional().default(""),
 });
 
-// Manually logged product sale (admin Umsatz tab).
+// Manually logged extra income (admin Umsatz tab): product sale or tip.
 export const productSaleSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ungültiges Datum."),
   amountCents: z
@@ -76,6 +76,7 @@ export const productSaleSchema = z.object({
     .int()
     .min(1, "Betrag muss größer als 0 sein.")
     .max(1_000_000),
+  kind: z.enum(["product", "tip"]).optional().default("product"),
   note: z.string().trim().max(120).optional().default(""),
 });
 

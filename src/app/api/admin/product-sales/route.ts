@@ -6,12 +6,16 @@ import { zonedToUtc } from "@/lib/time";
 
 // Manually logged product sales (wax, shampoo, …) for the admin Umsatz tab.
 
-// GET /api/admin/product-sales — the last 100 entries, newest first.
-export async function GET() {
+// GET /api/admin/product-sales?kind=product|tip — the last 100 entries of that
+// kind (default "product"), newest first.
+export async function GET(request: Request) {
   if (!(await isAuthenticated())) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
   }
+  const kindParam = new URL(request.url).searchParams.get("kind");
+  const kind = kindParam === "tip" ? "tip" : "product";
   const sales = await prisma.productSale.findMany({
+    where: { kind },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     take: 100,
   });
@@ -43,11 +47,12 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { date, amountCents, note } = parsed.data;
+  const { date, amountCents, kind, note } = parsed.data;
   const created = await prisma.productSale.create({
     data: {
       date: zonedToUtc(date, 0, siteConfig.timezone),
       amountCents,
+      kind,
       note: note ?? "",
     },
   });

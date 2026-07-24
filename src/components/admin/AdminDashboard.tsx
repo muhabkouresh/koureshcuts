@@ -884,6 +884,15 @@ function TermineTab({
         </p>
       )}
 
+      {!selectedOff && (
+        <ExtraHoursCard
+          date={selected}
+          special={selectedSpecial}
+          dayClosed={selectedClosed}
+          onChange={onChange}
+        />
+      )}
+
       {dayOpen && (
         <DaySlots
           date={selected}
@@ -1480,6 +1489,184 @@ function WaitlistPanel({
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+// Open extra bookable time on a single day, right from the day view — either a
+// single slot (e.g. 12:00–12:30) or a whole block (12:00–14:00). Backed by a
+// SpecialDay, which now ADDS to the weekly hours (see availability union), so
+// this extends an open day or opens a normally-closed one. "Öffentlich" shows
+// the slots in the customer calendar; "nur intern" keeps them admin-only.
+function ExtraHoursCard({
+  date,
+  special,
+  dayClosed,
+  onChange,
+}: {
+  date: string;
+  special: SpecialDay | null;
+  dayClosed: boolean;
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState("12:00");
+  const [to, setTo] = useState("14:00");
+  const [isPublic, setIsPublic] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function startEdit() {
+    if (special) {
+      setFrom(minutesToHHMM(special.openMinute));
+      setTo(minutesToHHMM(special.closeMinute));
+      setIsPublic(special.isPublic);
+    }
+    setError(null);
+    setOpen(true);
+  }
+
+  // "Single slot" shortcut: set the end to 30 minutes after the start.
+  function singleSlot() {
+    setTo(minutesToHHMM(Math.min(hhmmToMinutes(from) + 30, 24 * 60)));
+  }
+
+  async function save() {
+    if (hhmmToMinutes(to) <= hhmmToMinutes(from)) {
+      setError("Die Bis-Zeit muss nach der Von-Zeit liegen.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/special-days", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date,
+          openMinute: hhmmToMinutes(from),
+          closeMinute: hhmmToMinutes(to),
+          isPublic,
+          note: "",
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error ?? "Konnte nicht gespeichert werden.");
+        return;
+      }
+      setOpen(false);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!special) return;
+    if (!window.confirm("Extra-Zeiten an diesem Tag wieder entfernen?")) return;
+    setBusy(true);
+    try {
+      await fetch(`/api/admin/special-days/${special.id}`, { method: "DELETE" });
+      setOpen(false);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={special ? startEdit : () => setOpen(true)}
+          className="rounded-full border border-line bg-background px-4 py-2 text-xs font-semibold transition-colors hover:border-brand hover:text-brand"
+        >
+          {special
+            ? "⏰ Extra-Zeiten ändern"
+            : dayClosed
+              ? "⏰ Diesen Tag öffnen"
+              : "⏰ Extra-Zeiten öffnen"}
+        </button>
+        {special && (
+          <button
+            onClick={remove}
+            disabled={busy}
+            className="rounded-full border border-line px-4 py-2 text-xs text-muted hover:border-red-400 hover:text-red-600 disabled:opacity-50"
+          >
+            Entfernen
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border border-brand/30 bg-brand-soft/40 p-4">
+      <p className="text-sm font-semibold">
+        Extra-Zeiten am {longDateFromStr(date)}
+      </p>
+      <p className="mt-1 text-xs text-muted">
+        Öffnet buchbare 30-Minuten-Slots in diesem Zeitfenster — zusätzlich zu
+        den regulären Öffnungszeiten. Für einen einzelnen Termin z. B. 12:00 bis
+        12:30.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-2 text-sm">
+        <select
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+          className="rounded-lg border border-line bg-background px-2 py-2 tabular-nums"
+        >
+          {TIME_OPTIONS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <span className="pb-2 text-muted">bis</span>
+        <select
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          className="rounded-lg border border-line bg-background px-2 py-2 tabular-nums"
+        >
+          {TIME_OPTIONS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={singleSlot}
+          className="pb-0.5 text-xs text-muted underline underline-offset-4 hover:text-foreground"
+        >
+          nur ein Slot
+        </button>
+      </div>
+      <label className="mt-3 flex items-center gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={isPublic}
+          onChange={(e) => setIsPublic(e.target.checked)}
+        />
+        Öffentlich buchbar (erscheint im Kunden-Kalender)
+      </label>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          onClick={save}
+          disabled={busy}
+          className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {busy ? "Speichern…" : "Zeiten öffnen"}
+        </button>
+        <button
+          onClick={() => setOpen(false)}
+          className="text-sm text-muted underline underline-offset-4"
+        >
+          Abbrechen
+        </button>
+      </div>
     </section>
   );
 }
@@ -3267,7 +3454,28 @@ function UmsatzTab({
           </p>
         </div>
       </div>
-      <ProductSalesCard revenue={revenue} onChange={onChange} />
+      <ManualIncomeCard
+        kind="product"
+        title="Produktverkäufe"
+        toggleLabel="+ Produktumsatz"
+        emptyLabel="Noch keine Produktverkäufe eingetragen."
+        notePlaceholder="Notiz (optional, z. B. Wax)"
+        weekCents={revenue.productWeekCents}
+        monthCents={revenue.productMonthCents}
+        totalCents={revenue.productTotalCents}
+        onChange={onChange}
+      />
+      <ManualIncomeCard
+        kind="tip"
+        title="Trinkgeld"
+        toggleLabel="+ Trinkgeld"
+        emptyLabel="Noch kein Trinkgeld eingetragen."
+        notePlaceholder="Notiz (optional)"
+        weekCents={revenue.tipWeekCents}
+        monthCents={revenue.tipMonthCents}
+        totalCents={revenue.tipTotalCents}
+        onChange={onChange}
+      />
 
       <BarChart title="Pro Woche" data={revenue.weeks} />
       <BarChart title="Pro Monat" data={revenue.months} />
@@ -3291,24 +3499,39 @@ function UmsatzTab({
   );
 }
 
-type ProductSale = {
+type ManualIncome = {
   id: string;
   date: string;
   amountCents: number;
   note: string;
 };
 
-// Manually logged product sales (wax, shampoo, …). They flow into every
-// revenue figure and chart, so the Umsatz tab shows the full takings.
-function ProductSalesCard({
-  revenue,
+// Manually logged extra income — product sales (wax, shampoo, …) or tips
+// (Trinkgeld). Both flow into every revenue figure and chart, so the Umsatz
+// tab shows the full takings. `kind` selects which one this card manages.
+function ManualIncomeCard({
+  kind,
+  title,
+  toggleLabel,
+  emptyLabel,
+  notePlaceholder,
+  weekCents,
+  monthCents,
+  totalCents,
   onChange,
 }: {
-  revenue: RevenueStats;
+  kind: "product" | "tip";
+  title: string;
+  toggleLabel: string;
+  emptyLabel: string;
+  notePlaceholder: string;
+  weekCents: number;
+  monthCents: number;
+  totalCents: number;
   onChange: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [sales, setSales] = useState<ProductSale[] | null>(null);
+  const [sales, setSales] = useState<ManualIncome[] | null>(null);
   const [date, setDate] = useState(() => todayInTz(tz));
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -3316,7 +3539,7 @@ function ProductSalesCard({
   const [msg, setMsg] = useState<string | null>(null);
 
   function load() {
-    fetch("/api/admin/product-sales")
+    fetch(`/api/admin/product-sales?kind=${kind}`)
       .then((r) => r.json())
       .then((d) => setSales(d.sales ?? []))
       .catch(() => setSales([]));
@@ -3324,7 +3547,7 @@ function ProductSalesCard({
 
   useEffect(() => {
     if (open && sales === null) load();
-  }, [open, sales]);
+  }, [open, sales]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -3339,7 +3562,12 @@ function ProductSalesCard({
       const res = await fetch("/api/admin/product-sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, amountCents: cents, note: note.trim() }),
+        body: JSON.stringify({
+          date,
+          amountCents: cents,
+          kind,
+          note: note.trim(),
+        }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -3372,19 +3600,18 @@ function ProductSalesCard({
     <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Produktverkäufe</h2>
+          <h2 className="text-sm font-semibold">{title}</h2>
           <p className="mt-1 text-xs text-muted">
-            Diese Woche {priceFull(revenue.productWeekCents)} · diesen Monat{" "}
-            {priceFull(revenue.productMonthCents)} · gesamt{" "}
-            {priceFull(revenue.productTotalCents)} — bereits in allen Zahlen
-            oben enthalten.
+            Diese Woche {priceFull(weekCents)} · diesen Monat{" "}
+            {priceFull(monthCents)} · gesamt {priceFull(totalCents)} — bereits
+            in allen Zahlen oben enthalten.
           </p>
         </div>
         <button
           onClick={() => setOpen((o) => !o)}
           className="shrink-0 rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background"
         >
-          {open ? "Schließen" : "+ Produktumsatz"}
+          {open ? "Schließen" : toggleLabel}
         </button>
       </div>
 
@@ -3407,7 +3634,7 @@ function ProductSalesCard({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={120}
-              placeholder="Notiz (optional, z. B. Wax)"
+              placeholder={notePlaceholder}
               className="min-w-0 flex-1 rounded-lg border border-line bg-background px-3 py-2 text-sm"
             />
             <button
@@ -3424,7 +3651,7 @@ function ProductSalesCard({
             <p className="mt-3 text-sm text-muted">Lädt…</p>
           ) : sales.length === 0 ? (
             <p className="mt-3 rounded-lg bg-surface px-3 py-3 text-sm text-muted">
-              Noch keine Produktverkäufe eingetragen.
+              {emptyLabel}
             </p>
           ) : (
             <ul className="mt-3 flex flex-col gap-1.5">
