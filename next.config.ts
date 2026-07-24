@@ -1,16 +1,48 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV === "development";
+
+// Flip to false to ENFORCE the CSP; true sends it report-only (browsers log
+// violations to the console but don't block), so it can be validated live
+// first. Every resource the site loads is same-origin (fonts self-hosted via
+// next/font, Vercel Analytics proxied under our own domain, all APIs local),
+// so 'self' is enough — 'unsafe-inline' only covers Next.js's inline
+// hydration bootstrap and inline style attributes, which keeps the pages
+// statically cacheable (a per-request nonce would not).
+const CSP_REPORT_ONLY = true;
+
+const csp = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  `connect-src 'self'${isDev ? " ws:" : ""}`,
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+
 // Baseline security headers applied to every response. HSTS forces HTTPS,
 // nosniff blocks MIME-confusion, DENY stops the site being framed
-// (clickjacking), and the Permissions-Policy switches off device APIs the
-// site never uses. (A strict Content-Security-Policy is a good next step but
-// needs testing against Next.js's inline runtime, so it's left out for now.)
+// (clickjacking), the Permissions-Policy switches off unused device APIs, and
+// the CSP restricts every resource to same-origin.
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
+  {
+    key: CSP_REPORT_ONLY
+      ? "Content-Security-Policy-Report-Only"
+      : "Content-Security-Policy",
+    value: csp,
+  },
 ];
 
 const nextConfig: NextConfig = {
