@@ -327,6 +327,12 @@ export default async function Home() {
                 Meine Termine
               </Link>
               <Link
+                href="/app"
+                className="underline underline-offset-4 transition-colors hover:text-foreground"
+              >
+                App installieren
+              </Link>
+              <Link
                 href="/datenschutz"
                 className="underline underline-offset-4 transition-colors hover:text-foreground"
               >

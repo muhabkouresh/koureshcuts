@@ -41,16 +41,17 @@ export default function SiteHeader() {
         </ScrollLink>
 
         <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Primary header action: returning customers jump straight to their
+              appointments. New customers book via the hero button and the
+              booking section on the page. */}
           <Link
             href="/meine-termine"
             aria-label="Meine Termine"
             title="Meine Termine"
-            className="flex items-center justify-center rounded-full border border-brand/40 bg-brand-soft p-2 text-sm font-semibold text-brand transition-colors hover:bg-brand hover:text-white sm:px-4 sm:py-2"
+            className="btn-shine flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03] sm:px-5"
           >
-            {/* Compact calendar icon on phones — the text label would collide
-                with the shop name on narrow screens. */}
             <svg
-              className="h-5 w-5 sm:hidden"
+              className="h-5 w-5"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -64,14 +65,8 @@ export default function SiteHeader() {
                 strokeLinejoin="round"
               />
             </svg>
-            <span className="hidden sm:inline">Meine Termine</span>
+            <span>Meine Termine</span>
           </Link>
-          <ScrollLink
-            targetId="book"
-            className="btn-shine rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white shadow-[var(--shadow-brand)] transition-transform hover:scale-[1.03]"
-          >
-            Termin buchen
-          </ScrollLink>
         </div>
       </div>
     </header>
