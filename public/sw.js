@@ -1,11 +1,13 @@
 // Service worker: installability, an offline fallback, and fast repeat loads.
 // - Hashed build assets (/_next/static) and images are cache-first: they are
 //   immutable, so serving from cache makes app launches near-instant.
-// - Page navigations stay network-first (fresh HTML), falling back to the
-//   last cached copy when offline — including /admin, so the owner's day
-//   plan survives a Wi-Fi drop (device-local cache only).
+// - Page navigations are stale-while-revalidate: the last cached copy is
+//   served instantly (the installed app opens without waiting on the network
+//   or a cold serverless start), then refreshed in the background. Live data
+//   — availability, the admin day plan — is always fetched client-side, so a
+//   one-launch-old shell is never a correctness problem.
 // - API requests are never touched — availability must always be live.
-const CACHE = "koureshcuts-v2";
+const CACHE = "koureshcuts-v3";
 const FALLBACK = "/";
 
 self.addEventListener("install", (event) => {
@@ -65,21 +67,28 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (req.mode === "navigate") {
+    // Stale-while-revalidate: hand back the cached page immediately when we
+    // have one (instant app open), while a background fetch refreshes it for
+    // next time. With no cache yet, wait for the network and fall back to the
+    // cached start page when offline. Also covers /admin, so the owner's day
+    // plan opens instantly and survives a Wi-Fi drop (device-local cache).
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          // Keep the last good copy for offline use. This includes /admin:
-          // the owner's day plan stays readable when the shop Wi-Fi drops
-          // (cached only on their own device, always refreshed when online).
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() =>
-          caches.match(req).then((cached) => cached || caches.match(FALLBACK)),
-        ),
+      (async () => {
+        const cache = await caches.open(CACHE);
+        const cached = await cache.match(req);
+        const networkFetch = fetch(req)
+          .then((res) => {
+            if (res.ok) cache.put(req, res.clone());
+            return res;
+          })
+          .catch(() => null);
+        if (cached) {
+          event.waitUntil(networkFetch);
+          return cached;
+        }
+        const fresh = await networkFetch;
+        return fresh || (await cache.match(FALLBACK)) || Response.error();
+      })(),
     );
   }
 });
