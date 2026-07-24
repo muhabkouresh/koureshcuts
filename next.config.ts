@@ -9,7 +9,7 @@ const isDev = process.env.NODE_ENV === "development";
 // so 'self' is enough — 'unsafe-inline' only covers Next.js's inline
 // hydration bootstrap and inline style attributes, which keeps the pages
 // statically cacheable (a per-request nonce would not).
-const CSP_REPORT_ONLY = true;
+const CSP_REPORT_ONLY = false;
 
 const csp = [
   "default-src 'self'",
