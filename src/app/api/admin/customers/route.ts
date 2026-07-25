@@ -29,6 +29,8 @@ export async function GET() {
     appointments: number; // non-cancelled count
     completed: number;
     noShows: number;
+    /** Cancelled bookings — repeat cancellers block slots that often stay empty. */
+    cancellations: number;
     spentCents: number;
     lastStart: string | null;
   };
@@ -48,6 +50,7 @@ export async function GET() {
         appointments: 0,
         completed: 0,
         noShows: 0,
+        cancellations: 0,
         spentCents: 0,
         lastStart: null,
       };
@@ -60,7 +63,9 @@ export async function GET() {
       c.appointments += 1;
       c.noShows += 1;
       if (!c.lastStart) c.lastStart = r.startTime.toISOString();
-    } else if (r.status !== "CANCELLED") {
+    } else if (r.status === "CANCELLED") {
+      c.cancellations += 1;
+    } else {
       c.appointments += 1;
       if (!c.lastStart) c.lastStart = r.startTime.toISOString();
       // A visit counts as "wahrgenommen" once it lies in the past — no manual

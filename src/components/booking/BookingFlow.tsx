@@ -38,6 +38,8 @@ type BookingResult = {
   gcalUrl: string;
   // True when the booking needs the owner's approval first (approval list).
   pending?: boolean;
+  /** Days until the suggested follow-up — this customer's own visit rhythm. */
+  followUpDays?: number;
 };
 
 type Step = "service" | "datetime" | "details" | "done";
@@ -619,6 +621,8 @@ export default function BookingFlow({ services }: { services: Service[] }) {
             title="Termin-Erinnerung auch als Push aufs Handy?"
             label="🔔 Push-Erinnerung aktivieren"
             activeText="🔔 Aktiv — deine Termin-Erinnerung kommt zusätzlich als Push auf dieses Gerät."
+            hint="Zusätzlich zur E-Mail — damit du deinen Termin garantiert nicht vergisst."
+            installPitch="Mit der App bekommst du deine Termin-Erinnerung direkt aufs Handy — zusätzlich zur E-Mail."
           />
 
           {service && !result.pending && (
@@ -631,6 +635,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
               <FollowUpOffer
                 service={service}
                 startIso={result.start}
+                gapDays={result.followUpDays ?? 14}
                 customerName={name}
                 customerEmail={email}
               />
@@ -794,22 +799,27 @@ function SecondSlotOffer({
   );
 }
 
-// After a successful booking: offer the SAME slot exactly one week later, so
-// regulars lock in their rhythm in one tap. Falls back to other free times on
-// that day when the preferred one is taken; renders nothing if the day is
-// full or lies beyond the booking window.
+// After a successful booking: offer the next visit at this customer's own
+// rhythm (gapDays — their median gap, shop default 14), so regulars lock in
+// their next cut in one tap. The exact target day is often not bookable (it
+// can fall beyond the booking window, on a closed day, or be fully booked), so
+// the month's availability decides and the closest bookable day wins. Falls
+// back to other free times on that day; renders nothing when nothing fits.
 function FollowUpOffer({
   service,
   startIso,
+  gapDays,
   customerName,
   customerEmail,
 }: {
   service: Service;
   startIso: string;
+  gapDays: number;
   customerName: string;
   customerEmail: string;
 }) {
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [targetDate, setTargetDate] = useState<string | null>(null);
   const [preferred, setPreferred] = useState<Slot | null>(null);
   const [chosen, setChosen] = useState<string>("");
   const [showAll, setShowAll] = useState(false);
@@ -817,32 +827,60 @@ function FollowUpOffer({
   const [done, setDone] = useState<Slot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const nextWeekDate = useMemo(
-    () => addDaysToDateStr(dateKey(new Date(startIso), tz), 7),
-    [startIso],
+  const idealDate = useMemo(
+    () => addDaysToDateStr(dateKey(new Date(startIso), tz), gapDays),
+    [startIso, gapDays],
   );
   const wantedClock = formatClock(new Date(startIso), tz);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/availability?serviceId=${service.id}&date=${nextWeekDate}`, {
-      cache: "no-store",
-    })
+    const today = todayInTz(tz);
+    const [y, m] = idealDate.split("-").map(Number);
+    const idealDay = Number(idealDate.slice(8));
+
+    // One month lookup tells us every bookable day at once — cheaper and more
+    // reliable than probing single days that may lie outside the window.
+    fetch(
+      `/api/availability/month?serviceId=${service.id}&year=${y}&month=${m - 1}`,
+      { cache: "no-store" },
+    )
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
-        const free: Slot[] = d.slots ?? [];
-        setSlots(free);
-        setPreferred(
-          free.find((s) => formatClock(new Date(s.start), tz) === wantedClock) ??
-            null,
-        );
+        const open: number[] = d.days ?? [];
+        // Closest bookable day to the ideal one, never in the past.
+        const best = open
+          .map((day) => toDateStr(y, m - 1, day))
+          .filter((ds) => ds > today)
+          .sort(
+            (a, b) =>
+              Math.abs(Number(a.slice(8)) - idealDay) -
+              Math.abs(Number(b.slice(8)) - idealDay),
+          )[0];
+        if (!best) return;
+        setTargetDate(best);
+        return fetch(
+          `/api/availability?serviceId=${service.id}&date=${best}`,
+          { cache: "no-store" },
+        )
+          .then((r) => r.json())
+          .then((a) => {
+            if (cancelled) return;
+            const free: Slot[] = a.slots ?? [];
+            setSlots(free);
+            setPreferred(
+              free.find(
+                (s) => formatClock(new Date(s.start), tz) === wantedClock,
+              ) ?? null,
+            );
+          });
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [service.id, nextWeekDate, wantedClock]);
+  }, [service.id, idealDate, wantedClock]);
 
   async function book(startValue: string) {
     setSubmitting(true);
@@ -905,12 +943,14 @@ function FollowUpOffer({
     <div className="mt-4 rounded-2xl border border-line bg-surface p-5 text-left">
       <p className="text-sm">
         <span className="font-semibold text-foreground">
-          Gleich in einer Woche wiederkommen?
+          Gleich den nächsten Termin sichern?
         </span>{" "}
         <span className="text-muted">
           {preferred
             ? `Am ${formatDateTimeLabel(new Date(preferred.start), tz)} ist dieselbe Zeit noch frei.`
-            : `Am ${longDateFromStr(nextWeekDate)} ist ${wantedClock} Uhr belegt — diese Zeiten sind noch frei.`}
+            : targetDate
+              ? `Am ${longDateFromStr(targetDate)} ist ${wantedClock} Uhr schon belegt — diese Zeiten sind noch frei.`
+              : "Diese Zeiten sind noch frei."}
         </span>
       </p>
 
@@ -1074,7 +1114,14 @@ function WaitlistBox({ serviceId, date }: { serviceId: string; date: string }) {
         ✓ Du stehst auf der Warteliste
         {position !== null ? ` (Platz ${position})` : ""}. Wir melden uns per
         E-Mail, sobald an diesem Tag ein Platz frei wird.
-        <PushOptIn date={date} email={email} />
+        <PushOptIn
+          date={date}
+          email={email}
+          label="🔔 Sofort-Push aufs Handy — sei der Erste"
+          activeText="🔔 Aktiv! Du bekommst die Push-Nachricht in der Sekunde, in der etwas frei wird — noch vor der E-Mail."
+          hint="Freie Plätze sind meist in Minuten weg. Push ist schneller als E-Mail."
+          installPitch="Freie Plätze sind meist in Minuten weg. Mit der App bekommst du sie sofort aufs Handy — die E-Mail kommt oft zu spät."
+        />
       </div>
     );
   }
@@ -1203,7 +1250,13 @@ function GeneralWaitlistBox({
         ✓ Du stehst auf der Warteliste
         {position !== null ? ` (Platz ${position})` : ""}. Wir melden uns per
         E-Mail, sobald ein passender Termin für dich frei wird.
-        <PushOptIn email={email} />
+        <PushOptIn
+          email={email}
+          label="🔔 Sofort-Push aufs Handy — sei der Erste"
+          activeText="🔔 Aktiv! Du bekommst die Push-Nachricht in der Sekunde, in der etwas frei wird — noch vor der E-Mail."
+          hint="Freie Plätze sind meist in Minuten weg. Push ist schneller als E-Mail."
+          installPitch="Freie Plätze sind meist in Minuten weg. Mit der App bekommst du sie sofort aufs Handy — die E-Mail kommt oft zu spät."
+        />
       </div>
     );
   }

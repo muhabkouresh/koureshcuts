@@ -298,6 +298,9 @@ export type WaitlistEmailData = {
   serviceName: string;
   /** Specific requested day, or null for a flexible "next free slot" entry. */
   date: Date | null;
+  /** "Spot free" mails only: the day and time that actually opened up. */
+  freedDayLabel?: string;
+  freedTimeLabel?: string;
 };
 
 /** Confirm to the customer they're on the waitlist + notify the owner. */
@@ -347,28 +350,60 @@ export async function sendWaitlistJoinedEmails(
   }
 }
 
-/** Tell a waitlisted customer a spot opened up (owner-triggered from admin). */
+/**
+ * Tell a waitlisted customer a spot opened up. Sent automatically whenever a
+ * booking is cancelled/moved (see lib/waitlist) and manually from the admin.
+ * When the exact freed slot is known it is named prominently — "Mittwoch,
+ * 14:30 Uhr" converts far better than a vague "a spot opened up".
+ */
 export async function sendWaitlistSpotEmail(
   data: WaitlistEmailData,
 ): Promise<{ ok: boolean }> {
-  const day = data.date
-    ? formatLongDate(data.date, siteConfig.timezone)
-    : null;
+  const day =
+    data.freedDayLabel ??
+    (data.date ? formatLongDate(data.date, siteConfig.timezone) : null);
+  const time = data.freedTimeLabel ?? null;
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
+  // Big, unmissable slot card when we know the exact time.
+  const slotBlock =
+    day && time
+      ? `<div style="margin:20px 0 4px;padding:18px;border:2px solid #8a1f2b;border-radius:14px;text-align:center;background:#fdf6f7">
+           <p style="margin:0;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#8a1f2b;font-weight:700">Jetzt frei</p>
+           <p style="margin:6px 0 0;font-size:20px;font-weight:800;color:#18181b">${day}</p>
+           <p style="margin:2px 0 0;font-size:26px;font-weight:800;color:#8a1f2b">${time} Uhr</p>
+           <p style="margin:8px 0 0;font-size:13px;color:#777">${escapeHtml(data.serviceName)}</p>
+         </div>`
+      : "";
+
+  const intro =
+    day && time
+      ? `bei uns ist gerade ein Termin frei geworden — er passt zu deinem Wunsch auf der Warteliste.`
+      : `gute Nachrichten — für <strong>${escapeHtml(data.serviceName)}</strong>${day ? ` am <strong>${day}</strong>` : ""} ist ein Termin frei geworden.`;
+
   const html = layout(
-    "Ein Platz ist frei geworden!",
-    `<p style="font-size:14px;color:#444">Hallo ${escapeHtml(data.customerName)},<br/>
-       gute Nachrichten — für <strong>${data.serviceName}</strong>${day ? ` am <strong>${day}</strong>` : ""} ist ein Termin frei geworden.
-       Sei schnell und sichere ihn dir:</p>
-     <div style="margin:22px 0 8px;text-align:center">
-       <a href="${siteUrl}/#book" style="display:inline-block;background:#8a1f2b;color:#fff;text-decoration:none;padding:13px 30px;border-radius:999px;font-size:15px;font-weight:700">Jetzt Termin buchen</a>
+    "",
+    `<div style="text-align:center">
+       <div style="font-size:40px;margin:4px 0 10px">⚡</div>
+       <h2 style="margin:0;font-size:21px;font-weight:700">Ein Platz ist frei geworden!</h2>
+     </div>
+     <p style="font-size:14px;color:#444;margin:14px 0 0">Hallo ${escapeHtml(data.customerName)},<br/>${intro}</p>
+     ${slotBlock}
+     <p style="font-size:13px;color:#777;margin:14px 0 0;text-align:center">
+       Wer zuerst bucht, bekommt ihn — der Platz ist nicht für dich reserviert.
+     </p>
+     <div style="margin:18px 0 8px;text-align:center">
+       <a href="${siteUrl}/#book" style="display:inline-block;background:#8a1f2b;color:#fff;text-decoration:none;padding:14px 34px;border-radius:999px;font-size:16px;font-weight:700">Jetzt sichern</a>
      </div>`,
   );
   return send({
     to: data.customerEmail,
-    subject: day
-      ? `Platz frei: ${data.serviceName} am ${day}`
-      : `Platz frei: ${data.serviceName}`,
+    subject:
+      day && time
+        ? `⚡ ${time} Uhr frei am ${day} — ${data.serviceName}`
+        : day
+          ? `Platz frei: ${data.serviceName} am ${day}`
+          : `Platz frei: ${data.serviceName}`,
     html,
   });
 }

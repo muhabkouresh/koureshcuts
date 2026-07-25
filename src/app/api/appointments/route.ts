@@ -15,6 +15,7 @@ import { sendConfirmationEmails, sendBookingRequestEmail } from "@/lib/email";
 import { googleCalendarUrl } from "@/lib/calendar";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendAdminPush } from "@/lib/push";
+import { followUpGapDays } from "@/lib/rhythm";
 import { formatDateTimeLabel, weekdayOf, zonedToUtc } from "@/lib/time";
 
 // POST /api/appointments — create a guest booking.
@@ -276,6 +277,9 @@ export async function POST(request: NextRequest) {
     end,
   });
 
+  // Personal visit rhythm for the follow-up offer on the success screen.
+  const followUpDays = await followUpGapDays(input.customerEmail);
+
   return Response.json(
     {
       id: appointmentId,
@@ -286,6 +290,7 @@ export async function POST(request: NextRequest) {
       icsUrl: `/api/appointments/${appointmentId}/ics`,
       gcalUrl,
       pending: needsApproval,
+      followUpDays,
     },
     { status: 201 },
   );

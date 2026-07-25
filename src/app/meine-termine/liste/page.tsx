@@ -188,7 +188,8 @@ export default async function MyAppointmentsListPage({
                 title="Erinnerung auch als Push aufs Handy?"
                 label="🔔 Push-Erinnerung aktivieren"
                 activeText="🔔 Aktiv — deine Termin-Erinnerung kommt zusätzlich als Push auf dieses Gerät."
-                hint="iPhone: funktioniert nur, wenn du die Seite über „Teilen → Zum Home-Bildschirm“ als App hinzugefügt hast."
+                hint="Zusätzlich zur E-Mail — damit du deinen Termin garantiert nicht vergisst."
+                installPitch="Mit der App bekommst du deine Termin-Erinnerung direkt aufs Handy — zusätzlich zur E-Mail."
               />
             )}
 

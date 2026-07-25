@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { siteConfig } from "@/config/site";
+import PushOptIn from "./PushOptIn";
 
 const siteName = siteConfig.name;
 
@@ -65,14 +66,25 @@ export default function AppInstall() {
 
   if (installed) {
     return (
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-6 text-center">
-        <div className="text-4xl">✅</div>
-        <p className="mt-3 text-lg font-bold text-emerald-800">
-          Die App ist bereits installiert
-        </p>
-        <p className="mt-1 text-sm text-emerald-700">
-          Öffne sie über das {siteName}-Symbol auf deinem Home-Bildschirm.
-        </p>
+      <div className="flex flex-col gap-4">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-6 text-center">
+          <div className="text-4xl">✅</div>
+          <p className="mt-3 text-lg font-bold text-emerald-800">
+            Die App ist installiert
+          </p>
+          <p className="mt-1 text-sm text-emerald-700">
+            Öffne sie jederzeit über das {siteName}-Symbol auf deinem
+            Home-Bildschirm.
+          </p>
+        </div>
+        {/* The one thing left to switch on — and the reason push adoption was
+            near zero before: this only works from inside the installed app. */}
+        <PushOptIn
+          title="Noch ein Schritt: Benachrichtigungen an"
+          label="🔔 Benachrichtigungen aktivieren"
+          activeText="🔔 Aktiv! Du bekommst deine Termin-Erinnerung und freie Plätze sofort aufs Handy."
+          hint="Erinnerung vor deinem Termin + Sofort-Info, wenn ein Platz frei wird."
+        />
       </div>
     );
   }

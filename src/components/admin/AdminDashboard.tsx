@@ -42,6 +42,8 @@ type Appointment = {
   end: string;
   // No-show history of this customer (risk badge on upcoming appointments).
   riskNoShows: number;
+  /** How often this customer has cancelled before (repeat-canceller badge). */
+  riskCancels: number;
 };
 
 type DayHours = {
@@ -2901,6 +2903,14 @@ function AgendaCard({
                 ⚠️
               </span>
             )}
+            {!cancelled && !isPast && a.riskNoShows === 0 && a.riskCancels >= 2 && (
+              <span
+                className="mr-1"
+                title={`Hat schon ${a.riskCancels}× abgesagt`}
+              >
+                ↩️
+              </span>
+            )}
             {a.customerName}
             {a.status !== "CONFIRMED" && (
               <span
@@ -2936,6 +2946,12 @@ function AgendaCard({
           {!cancelled && !isPast && a.riskNoShows > 0 && (
             <p className="mt-2 inline-block rounded-full bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700">
               ⚠️ Schon {a.riskNoShows}× nicht erschienen — No-Show-Risiko
+            </p>
+          )}
+          {!cancelled && !isPast && a.riskCancels >= 2 && (
+            <p className="mt-2 inline-block rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+              ↩️ Hat schon {a.riskCancels}× abgesagt — ggf. auf die
+              Freigabe-Liste setzen
             </p>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -4279,6 +4295,7 @@ type CustomerStat = {
   appointments: number;
   completed: number;
   noShows: number;
+  cancellations: number;
   spentCents: number;
   lastStart: string | null;
 };
@@ -4515,6 +4532,11 @@ function KundenTab({
                               : `${c.noShows} nicht erschienen`}
                           </span>
                         ))}
+                      {c.cancellations >= 2 && (
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-800">
+                          {c.cancellations}× abgesagt
+                        </span>
+                      )}
                       <span className="rounded-full bg-surface px-2.5 py-1 text-muted">
                         {priceFull(c.spentCents)} ausgegeben
                       </span>

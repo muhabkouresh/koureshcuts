@@ -26,6 +26,8 @@ export default function PushOptIn({
   label = "🔔 Zusätzlich Sofort-Push aufs Handy",
   activeText = "🔔 Termin-Radar aktiv — du bekommst sofort eine Push-Nachricht auf diesem Gerät, wenn etwas frei wird.",
   hint,
+  /** Why installing is worth it — shown to iPhone users who can't opt in yet. */
+  installPitch = "Auf dem iPhone gehen Push-Nachrichten nur aus der App heraus.",
 }: {
   date?: string;
   email?: string;
@@ -36,20 +38,54 @@ export default function PushOptIn({
   activeText?: string;
   /** Small print below the button (e.g. the iOS install requirement). */
   hint?: string;
+  installPitch?: string;
 }) {
   const [supported, setSupported] = useState(false);
+  // iOS only exposes the Push API inside an installed web app. Without this
+  // branch iPhone visitors saw nothing at all and never learned that push
+  // exists — which is why almost nobody had it enabled.
+  const [needsInstall, setNeedsInstall] = useState(false);
   const [state, setState] = useState<"idle" | "busy" | "on" | "error">("idle");
 
   /* eslint-disable react-hooks/set-state-in-effect -- one-time client-only feature detection (browser APIs unavailable during SSR) */
   useEffect(() => {
-    setSupported(
-      typeof window !== "undefined" &&
-        "serviceWorker" in navigator &&
-        "PushManager" in window &&
-        "Notification" in window,
-    );
+    if (typeof window === "undefined") return;
+    const ok =
+      "serviceWorker" in navigator &&
+      "PushManager" in window &&
+      "Notification" in window;
+    if (ok) {
+      setSupported(true);
+      return;
+    }
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const installed =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as unknown as { standalone?: boolean }).standalone === true;
+    if (isIos && !installed) setNeedsInstall(true);
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  if (needsInstall) {
+    const box = (
+      <div className="mt-2 text-center">
+        <p className="text-xs leading-relaxed text-muted">{installPitch}</p>
+        <a
+          href="/app"
+          className="mt-2 inline-block rounded-full bg-brand px-4 py-2 text-xs font-semibold text-white"
+        >
+          📲 App in 20 Sekunden einrichten
+        </a>
+      </div>
+    );
+    if (!title) return box;
+    return (
+      <div className="mt-6 rounded-xl bg-surface px-4 py-3 text-center">
+        <p className="text-sm font-medium">{title}</p>
+        {box}
+      </div>
+    );
+  }
 
   if (!supported) return null;
 

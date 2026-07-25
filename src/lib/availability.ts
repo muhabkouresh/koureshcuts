@@ -4,6 +4,8 @@ import { siteConfig } from "@/config/site";
 import { getSettings } from "./settings";
 import { BUSY_STATUSES, SLOT_INTERVAL_MINUTES } from "./constants";
 import {
+  addDaysToDateStr,
+  dateKey,
   daysInMonth,
   isValidDateStr,
   toDateStr,
@@ -180,30 +182,80 @@ export async function getAvailability(
 }
 
 /**
- * Earliest bookable slot for a service (across this and next month — the
- * booking window never reaches further than that plus change). Used for the
- * "next free appointment" teaser on the landing page.
+ * Earliest bookable slot for a service — the "next free appointment" teaser on
+ * the landing page.
+ *
+ * Loads every input ONCE and then walks the days in memory. The previous
+ * version asked the database again for each candidate day (four queries per
+ * day on top of a month scan), which made this the slowest endpoint on the
+ * site by a wide margin.
  */
 export async function getNextFreeSlot(
   serviceId: string,
 ): Promise<{ start: string } | null> {
+  const service = await loadService(serviceId);
+  const settings = await getSettings();
   const today = todayInTz(tz);
-  const [y, m] = today.split("-").map(Number);
 
-  for (let i = 0; i < 2; i++) {
-    let year = y;
-    let month0 = m - 1 + i;
-    if (month0 > 11) {
-      month0 -= 12;
-      year += 1;
+  // Scan the bookable window, plus a small tail so a slot late on the last day
+  // is still found. Public extra days may sit beyond the window (they ignore
+  // it by design), so they are appended as extra candidates.
+  const windowDays = Math.max(1, settings.bookingWindowDays);
+  const rangeStart = zonedToUtc(today, 0, tz);
+  const rangeEnd = zonedToUtc(
+    addDaysToDateStr(today, windowDays + 1),
+    24 * 60,
+    tz,
+  );
+  const specialHorizon = zonedToUtc(addDaysToDateStr(today, 180), 24 * 60, tz);
+
+  const [hoursByDay, timeOffs, specialDays, appointments] = await Promise.all([
+    loadHoursMap(),
+    prisma.timeOff.findMany({
+      where: { startDate: { lt: specialHorizon }, endDate: { gte: rangeStart } },
+      select: { startDate: true, endDate: true },
+    }),
+    prisma.specialDay.findMany({
+      where: { isPublic: true, date: { gte: rangeStart, lt: specialHorizon } },
+      select: { date: true, openMinute: true, closeMinute: true },
+    }),
+    prisma.appointment.findMany({
+      where: {
+        status: { in: BUSY_STATUSES },
+        startTime: { lt: specialHorizon },
+        endTime: { gt: rangeStart },
+      },
+      select: { startTime: true, endTime: true },
+    }),
+  ]);
+
+  const candidates: string[] = [];
+  for (let i = 0; i <= windowDays + 1; i++) {
+    candidates.push(addDaysToDateStr(today, i));
+  }
+  for (const s of specialDays) {
+    const ds = dateKey(s.date, tz);
+    if (ds >= today && !candidates.includes(ds)) candidates.push(ds);
+  }
+  candidates.sort();
+
+  const now = new Date();
+  for (const dateStr of candidates) {
+    // Past days and days beyond the range can't yield anything useful.
+    if (zonedToUtc(dateStr, 0, tz) > rangeEnd && !specialDays.some((s) => dateKey(s.date, tz) === dateStr)) {
+      continue;
     }
-    const { days } = await getMonthAvailability(serviceId, year, month0);
-    for (const day of days) {
-      const dateStr = toDateStr(year, month0, day);
-      if (dateStr < today) continue;
-      const { slots } = await getAvailability(serviceId, dateStr);
-      if (slots.length > 0) return { start: slots[0].start };
-    }
+    const slots = computeSlots(
+      dateStr,
+      service,
+      hoursByDay,
+      timeOffs,
+      specialDays,
+      appointments,
+      now,
+      settings.bookingWindowDays,
+    );
+    if (slots.length > 0) return { start: slots[0].start };
   }
   return null;
 }

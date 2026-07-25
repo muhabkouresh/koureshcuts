@@ -28,6 +28,7 @@ export default async function AdminPage() {
     revenue,
     waitlist,
     noShowGroups,
+    cancelGroups,
     emailFailures,
   ] = await Promise.all([
       prisma.appointment.findMany({
@@ -70,6 +71,13 @@ export default async function AdminPage() {
         where: { status: "NO_SHOW", customerEmail: { not: "" } },
         _count: { _all: true },
       }),
+      // Cancellation history per email — repeat cancellers cost slots that
+      // often can't be refilled, so they get their own badge.
+      prisma.appointment.groupBy({
+        by: ["customerEmail"],
+        where: { status: "CANCELLED", customerEmail: { not: "" } },
+        _count: { _all: true },
+      }),
       // Refused mails still waiting for a retry — powers the warning banner.
       prisma.emailFailure.count({
         where: { sentAt: null, attempts: { lt: 4 } },
@@ -81,6 +89,11 @@ export default async function AdminPage() {
   for (const g of noShowGroups) {
     const key = g.customerEmail.toLowerCase();
     noShowByEmail.set(key, (noShowByEmail.get(key) ?? 0) + g._count._all);
+  }
+  const cancelByEmail = new Map<string, number>();
+  for (const g of cancelGroups) {
+    const key = g.customerEmail.toLowerCase();
+    cancelByEmail.set(key, (cancelByEmail.get(key) ?? 0) + g._count._all);
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -115,6 +128,9 @@ export default async function AdminPage() {
       end: a.endTime.toISOString(),
       riskNoShows: a.customerEmail
         ? (noShowByEmail.get(a.customerEmail.toLowerCase()) ?? 0)
+        : 0,
+      riskCancels: a.customerEmail
+        ? (cancelByEmail.get(a.customerEmail.toLowerCase()) ?? 0)
         : 0,
     })),
     hours: hoursRows.map((h) => ({
