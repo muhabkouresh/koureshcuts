@@ -1,6 +1,12 @@
 import { prisma } from "./prisma";
 import { siteConfig } from "@/config/site";
-import { dateKey, zonedToUtc, formatLongDate, formatClock } from "./time";
+import {
+  dateKey,
+  zonedToUtc,
+  formatLongDate,
+  formatClock,
+  weekdayOf,
+} from "./time";
 import { sendWaitlistSpotEmail } from "./email";
 import { sendCustomerPushForDay } from "./push";
 
@@ -26,7 +32,9 @@ export async function notifyWaitlistForDay(freedAt: Date): Promise<number> {
   const dayStart = zonedToUtc(ds, 0, tz);
   const dayEnd = zonedToUtc(ds, 24 * 60, tz);
   // 0 = Sunday … 6 = Saturday, matching WaitlistEntry.weekdays (CSV).
-  const weekday = String(new Date(dayStart).getUTCDay());
+  // Derived from the calendar date, not from dayStart: local midnight is the
+  // *previous* day in UTC, which would shift every weekday by one.
+  const weekday = String(weekdayOf(ds));
 
   // Push first — it's the faster channel, and it never throws.
   await sendCustomerPushForDay(dayStart, dayEnd, formatLongDate(freedAt, tz));
