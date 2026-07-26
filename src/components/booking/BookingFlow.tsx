@@ -337,22 +337,23 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                         {s.name.charAt(0).toUpperCase()}
                       </span>
                       <div className="min-w-0">
-                        {/* Must be allowed to wrap: a non-wrapping name like
-                            "Haarschnitt + Bart | 20 €" made the row wider than
-                            a phone screen and pushed the button off-card. */}
+                        {/* Name on its own line, price down with the duration:
+                            "Haarschnitt + Bart | 20 €" on one line was wider
+                            than a phone screen and pushed the button out of
+                            the card. */}
                         <p className="text-base font-semibold leading-snug">
-                          {s.name}{" "}
-                          <span className="whitespace-nowrap font-bold">
-                            | {priceShort(s.priceCents)}
-                          </span>
+                          {s.name}
                         </p>
                         <p className="mt-0.5 text-xs text-muted">
-                          Dauer: {s.durationMinutes} Min.
+                          {s.durationMinutes} Min.{" · "}
+                          <span className="font-bold text-foreground">
+                            {priceShort(s.priceCents)}
+                          </span>
                         </p>
                       </div>
                     </div>
                     <span
-                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm transition-transform group-hover:scale-[1.04] ${t.solid}`}
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-white shadow-sm transition-transform group-hover:scale-[1.04] sm:px-4 sm:text-sm ${t.solid}`}
                     >
                       Auswählen{" "}
                       <span
