@@ -141,11 +141,21 @@ export type HoursAnalysis = {
 };
 
 /**
+ * Below this many analysed slots a weekday is ignored for advice. Without it a
+ * one-off extra day — e.g. a single Sunday with 3 slots that happened to fill
+ * up — would show as "100% booked" and become the top recommendation.
+ */
+const MIN_SLOTS_FOR_ADVICE = 12;
+
+/**
  * Which weekday is under the most pressure — the basis for "opening two hours
  * longer on Friday would have brought N more appointments". Combines how full
  * the day already is with how many people asked for it on the waitlist.
+ *
+ * The window is deliberately short (6 weeks): advice about opening hours has
+ * to reflect current demand, not a quiet start months ago.
  */
-export async function analyseHours(daysBack = 60): Promise<HoursAnalysis> {
+export async function analyseHours(daysBack = 42): Promise<HoursAnalysis> {
   const today = todayInTz(tz);
   const from = addDaysToDateStr(today, -daysBack);
   const loads = await getDayLoads(from, daysBack);
@@ -180,8 +190,10 @@ export async function analyseHours(daysBack = 60): Promise<HoursAnalysis> {
   }
 
   const weeksAnalysed = daysBack / 7;
-  const suggestions: HoursSuggestion[] = [...byWeekday.entries()].map(
-    ([weekday, acc]) => {
+  const suggestions: HoursSuggestion[] = [...byWeekday.entries()]
+    // Too few slots = no meaningful pattern, and a misleading percentage.
+    .filter(([, acc]) => acc.capacity >= MIN_SLOTS_FOR_ADVICE)
+    .map(([weekday, acc]) => {
       const percent = Math.round((acc.booked / acc.capacity) * 100);
       // Two extra hours = 4 slots per occurrence; assume they fill at the same
       // rate the day already achieves, capped at 100%.
@@ -195,8 +207,7 @@ export async function analyseHours(daysBack = 60): Promise<HoursAnalysis> {
         capacity: acc.capacity,
         potentialPerMonth,
       };
-    },
-  );
+    });
 
   // Pressure = how full it is, with waitlist demand as the tie-breaker.
   suggestions.sort(
