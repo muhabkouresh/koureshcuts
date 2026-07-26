@@ -1,22 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { enablePush, isStandalone, pushSupported } from "@/lib/pushClient";
 
-// Shared customer push opt-in, used in two places:
-// - booking flow (waitlist "Termin-Radar" + post-booking reminder opt-in)
-// - "Meine Termine" (existing customers enabling reminder pushes later)
+// Customer push opt-in, used after booking, after joining the waitlist, on
+// "Meine Termine" and on /app. The subscribe logic itself lives in
+// lib/pushClient so the in-app banner (PushBanner) behaves identically.
 //
 // With `reminderOnly` the device receives ONLY reminder pushes for its booked
 // appointments — never the "slot freed" radar messages (see /api/push).
-
-function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
-  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(b64);
-  const out = new Uint8Array(new ArrayBuffer(raw.length));
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
-}
 
 export default function PushOptIn({
   date,
@@ -49,20 +41,12 @@ export default function PushOptIn({
 
   /* eslint-disable react-hooks/set-state-in-effect -- one-time client-only feature detection (browser APIs unavailable during SSR) */
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const ok =
-      "serviceWorker" in navigator &&
-      "PushManager" in window &&
-      "Notification" in window;
-    if (ok) {
+    if (pushSupported()) {
       setSupported(true);
       return;
     }
     const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const installed =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone === true;
-    if (isIos && !installed) setNeedsInstall(true);
+    if (isIos && !isStandalone()) setNeedsInstall(true);
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -91,38 +75,8 @@ export default function PushOptIn({
 
   async function enable() {
     setState("busy");
-    try {
-      const conf = await fetch("/api/push").then((r) => r.json());
-      if (!conf.enabled || !conf.publicKey) {
-        setState("error");
-        return;
-      }
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setState("error");
-        return;
-      }
-      const reg = await navigator.serviceWorker.ready;
-      const sub =
-        (await reg.pushManager.getSubscription()) ??
-        (await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(conf.publicKey),
-        }));
-      const res = await fetch("/api/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subscription: sub.toJSON(),
-          date,
-          email,
-          reminderOnly,
-        }),
-      });
-      setState(res.ok ? "on" : "error");
-    } catch {
-      setState("error");
-    }
+    const res = await enablePush({ date, email, reminderOnly });
+    setState(res === "ok" ? "on" : "error");
   }
 
   const inner =

@@ -10,6 +10,8 @@ import Reveal from "@/components/ui/Reveal";
 import ScrollLink from "@/components/ui/ScrollLink";
 import InstallPrompt from "@/components/ui/InstallPrompt";
 import NextSlotTeaser from "@/components/ui/NextSlotTeaser";
+import PushBanner from "@/components/ui/PushBanner";
+import AppFooterLink from "@/components/ui/AppFooterLink";
 
 // Serve the landing shell from cache and refresh it in the background every
 // 60s (ISR) instead of hitting Neon on every visit (force-dynamic). Services
@@ -119,6 +121,9 @@ export default async function Home() {
         </div>
 
         <div className="relative mx-auto flex max-w-3xl flex-col items-center px-5 pb-24 pt-36 text-center sm:pb-32 sm:pt-44">
+          {/* Installed app only: the one-tap way to switch notifications on. */}
+          <PushBanner />
+
           {emergencyNow && (
             <div className="animate-fade-up mb-6 w-full max-w-md rounded-2xl border border-red-200 bg-red-50/90 px-5 py-3 text-sm text-red-800 backdrop-blur-sm">
               <p className="font-semibold">
@@ -311,12 +316,7 @@ export default async function Home() {
               >
                 Meine Termine
               </Link>
-              <Link
-                href="/app"
-                className="underline underline-offset-4 transition-colors hover:text-foreground"
-              >
-                App installieren
-              </Link>
+              <AppFooterLink className="underline underline-offset-4 transition-colors hover:text-foreground" />
               <Link
                 href="/datenschutz"
                 className="underline underline-offset-4 transition-colors hover:text-foreground"
