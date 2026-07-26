@@ -337,9 +337,12 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                         {s.name.charAt(0).toUpperCase()}
                       </span>
                       <div className="min-w-0">
-                        <p className="whitespace-nowrap text-base font-semibold">
+                        {/* Must be allowed to wrap: a non-wrapping name like
+                            "Haarschnitt + Bart | 20 €" made the row wider than
+                            a phone screen and pushed the button off-card. */}
+                        <p className="text-base font-semibold leading-snug">
                           {s.name}{" "}
-                          <span className="font-bold">
+                          <span className="whitespace-nowrap font-bold">
                             | {priceShort(s.priceCents)}
                           </span>
                         </p>

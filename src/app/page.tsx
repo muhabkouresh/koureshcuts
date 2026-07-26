@@ -80,23 +80,18 @@ export default async function Home() {
   });
   const services: Service[] = serviceRows;
 
-  // Upcoming closures (next 30 days) for the info banner, and the earliest
-  // bookable slot as a hero teaser. Both refresh with the 60s ISR cycle.
-  const closures = await prisma.timeOff.findMany({
+  // Only short-notice closures (Notfall-Knopf) are announced here. Planned
+  // days off are simply not bookable in the calendar — a banner listing them
+  // added noise to the hero without telling customers anything actionable.
+  const emergencyNow = await prisma.timeOff.findFirst({
     where: {
+      emergency: true,
+      startDate: { lte: new Date(nowMs()) },
       endDate: { gt: new Date(nowMs()) },
-      startDate: { lt: new Date(nowMs() + 30 * 24 * 60 * 60_000) },
     },
     orderBy: { startDate: "asc" },
-    take: 3,
-    select: { id: true, startDate: true, endDate: true, emergency: true },
+    select: { id: true, startDate: true, endDate: true },
   });
-  // A short-notice closure (Notfall-Knopf) covering right now gets its own
-  // red banner instead of the regular amber closure list.
-  const emergencyNow = closures.find(
-    (c) => c.emergency && c.startDate.getTime() <= nowMs(),
-  );
-  const plannedClosures = closures.filter((c) => c !== emergencyNow);
 
   return (
     <>
@@ -133,19 +128,6 @@ export default async function Home() {
               <p className="mt-0.5">
                 Bereits gebuchte Termine wurden per E-Mail abgesagt. Wir bitten
                 um Verständnis!
-              </p>
-            </div>
-          )}
-
-          {plannedClosures.length > 0 && (
-            <div className="animate-fade-up mb-6 w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50/90 px-5 py-3 text-sm text-amber-800 backdrop-blur-sm">
-              <p className="font-semibold">
-                {plannedClosures.length === 1 ? "Geschlossen" : "Geschlossen an folgenden Tagen"}
-              </p>
-              <p className="mt-0.5">
-                {plannedClosures
-                  .map((c) => closureLabel(c.startDate, c.endDate))
-                  .join(" · ")}
               </p>
             </div>
           )}
