@@ -341,7 +341,9 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                             "Haarschnitt + Bart | 20 €" on one line was wider
                             than a phone screen and pushed the button out of
                             the card. */}
-                        <p className="text-base font-semibold leading-snug">
+                        {/* A hair smaller on phones so the longest service
+                            name ("Haarschnitt + Bart") still fits one line. */}
+                        <p className="text-[15px] font-semibold leading-snug sm:text-base">
                           {s.name}
                         </p>
                         <p className="mt-0.5 text-xs text-muted">
