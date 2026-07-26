@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { siteConfig } from "@/config/site";
-import { BUSY_STATUSES, SLOT_INTERVAL_MINUTES } from "./constants";
+import { SLOT_INTERVAL_MINUTES } from "./constants";
 import { addDaysToDateStr, dateKey, todayInTz, weekdayOf, zonedToUtc } from "./time";
 
 // Shared capacity maths for the capacity warning (cron) and the opening-hours
@@ -8,6 +8,14 @@ import { addDaysToDateStr, dateKey, todayInTz, weekdayOf, zonedToUtc } from "./t
 // derived from the weekly hours plus public extra days, minus blocked days.
 
 const tz = siteConfig.timezone;
+
+// Everything that actually occupied the chair. Deliberately NOT BUSY_STATUSES:
+// that list exists for the availability check and leaves out COMPLETED and
+// NO_SHOW, because a finished appointment no longer blocks a future slot. For
+// utilisation the opposite is true — past days auto-switch to COMPLETED, so
+// using BUSY_STATUSES made every past day look empty (a Saturday with 11
+// appointments reported 0% booked).
+const OCCUPIED_STATUSES = ["PENDING", "CONFIRMED", "COMPLETED", "NO_SHOW", "BLOCKED"];
 
 export type DayLoad = {
   /** "yyyy-MM-dd" in the shop timezone. */
@@ -38,7 +46,7 @@ export async function getDayLoads(
     }),
     prisma.appointment.findMany({
       where: {
-        status: { in: BUSY_STATUSES },
+        status: { in: OCCUPIED_STATUSES },
         startTime: { lt: rangeEnd },
         endTime: { gt: rangeStart },
       },
