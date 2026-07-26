@@ -3,10 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
 import { ACTIVE_STATUSES } from "@/lib/constants";
 import { sendReminderEmail, retryFailedEmails } from "@/lib/email";
-import { getSettings, updateSettings } from "@/lib/settings";
+import { getSettings } from "@/lib/settings";
 import { runWinback } from "@/lib/winback";
-import { getUpcomingLoad } from "@/lib/capacity";
-import { sendCustomerReminderPush, sendAdminPush } from "@/lib/push";
+import { sendCustomerReminderPush } from "@/lib/push";
 import { formatDateTimeLabel } from "@/lib/time";
 
 // GET /api/cron/reminders — invoked daily by Vercel Cron. Sends a reminder
@@ -56,30 +55,6 @@ export async function GET(request: NextRequest) {
 
   const settings = await getSettings();
 
-  // Capacity warning: tell the owner while there is still time to open an
-  // extra day or post a story. Warned at most once per situation — the flag
-  // only resets once the coming week has breathing room again.
-  let capacityWarned = false;
-  try {
-    const outlook = await getUpcomingLoad(7);
-    const tight = outlook.capacity > 0 && outlook.percent >= 90;
-    if (tight && !settings.capacityWarnedAt) {
-      await sendAdminPush(
-        "📈 Nächste Woche fast voll",
-        `${outlook.percent}% ausgebucht — nur noch ${outlook.free} freie ${
-          outlook.free === 1 ? "Zeit" : "Zeiten"
-        } in den nächsten 7 Tagen. Zeit für einen Extra-Tag?`,
-      );
-      await updateSettings({ capacityWarnedAt: new Date() });
-      capacityWarned = true;
-    } else if (!tight && settings.capacityWarnedAt) {
-      // Situation eased — arm the warning again for next time.
-      await updateSettings({ capacityWarnedAt: null });
-    }
-  } catch (err) {
-    console.error("capacity check failed", err);
-  }
-
   // Win-back: one "we miss you" mail per lapsed customer (see lib/winback).
   let winbackSent = 0;
   try {
@@ -95,7 +70,6 @@ export async function GET(request: NextRequest) {
       considered: 0,
       sent: 0,
       winbackSent,
-      capacityWarned,
       emailsRetried,
       waitlistCleaned: cleanedDay.count + cleanedFlex.count,
     });
@@ -149,7 +123,6 @@ export async function GET(request: NextRequest) {
     considered: due.length,
     sent,
     winbackSent,
-    capacityWarned,
     emailsRetried,
     waitlistCleaned: cleanedDay.count + cleanedFlex.count,
   });

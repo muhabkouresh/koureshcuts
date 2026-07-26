@@ -67,8 +67,10 @@ model Settings {
   /// Max waitlist entries per day (0 = unlimited). A queue nobody ever gets
   /// off frustrates more than it helps.
   waitlistMaxPerDay Int      @default(0)
-  /// When the "next week is nearly full" push last went out, so the daily
-  /// cron warns once per situation instead of every morning.
+  /// Unused. Belonged to a capacity warning that measured bookings against the
+  /// configured opening hours — those don't match the real working times, so
+  /// the figure was meaningless and the feature was removed. Column kept to
+  /// avoid a pointless migration.
   capacityWarnedAt  DateTime?
   updatedAt         DateTime @updatedAt
 }
