@@ -112,6 +112,7 @@ export default async function AdminPage() {
     noShowBlockThreshold: settings.noShowBlockThreshold,
     winbackWeeks: settings.winbackWeeks,
     ownerCopyEmails: settings.ownerCopyEmails,
+    waitlistMaxPerDay: settings.waitlistMaxPerDay,
     emailFailures,
     revenue,
     services,

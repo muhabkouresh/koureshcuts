@@ -92,6 +92,7 @@ type Data = {
   noShowBlockThreshold: number;
   winbackWeeks: number;
   ownerCopyEmails: boolean;
+  waitlistMaxPerDay: number;
   emailFailures: number;
   revenue: RevenueStats;
   services: Service[];
@@ -354,6 +355,7 @@ export default function AdminDashboard({
           maxActiveBookingsPerEmail={data.maxActiveBookingsPerEmail}
           noShowBlockThreshold={data.noShowBlockThreshold}
           ownerCopyEmails={data.ownerCopyEmails}
+          waitlistMaxPerDay={data.waitlistMaxPerDay}
           onChange={() => router.refresh()}
         />
       )}
@@ -3727,6 +3729,142 @@ const PATH_LABELS: Record<string, string> = {
   "/news/abmelden": "News-Abmeldung",
 };
 
+type CapacityData = {
+  outlook: { capacity: number; booked: number; free: number; percent: number };
+  hours: {
+    suggestions: {
+      weekday: number;
+      percent: number;
+      waitlist: number;
+      capacity: number;
+      potentialPerMonth: number;
+    }[];
+    daysAnalysed: number;
+    overallPercent: number;
+  };
+};
+
+// Utilisation of the coming week plus a concrete opening-hours recommendation,
+// so "should I work longer?" is answered with numbers instead of a hunch.
+function CapacityCard() {
+  const [data, setData] = useState<CapacityData | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/capacity")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("failed"))))
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (failed) return null;
+  if (!data) {
+    return (
+      <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+        <p className="text-sm text-muted">Auslastung wird berechnet…</p>
+      </section>
+    );
+  }
+
+  const { outlook, hours } = data;
+  const top = hours.suggestions[0];
+  const tone =
+    outlook.percent >= 90
+      ? "text-red-700"
+      : outlook.percent >= 70
+        ? "text-amber-700"
+        : "text-emerald-700";
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">Auslastung &amp; Öffnungszeiten</h2>
+      <p className="mt-1 text-xs text-muted">
+        Wie voll die nächsten 7 Tage sind und wo sich mehr Zeit am ehesten
+        lohnt — berechnet aus den letzten {hours.daysAnalysed} Tagen.
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-end gap-6">
+        <div>
+          <p className={`text-3xl font-bold tabular-nums ${tone}`}>
+            {outlook.percent}%
+          </p>
+          <p className="text-[11px] text-muted">nächste 7 Tage belegt</p>
+        </div>
+        <div>
+          <p className="text-3xl font-bold tabular-nums">{outlook.free}</p>
+          <p className="text-[11px] text-muted">
+            freie {outlook.free === 1 ? "Zeit" : "Zeiten"} übrig
+          </p>
+        </div>
+        <div>
+          <p className="text-3xl font-bold tabular-nums text-muted">
+            {hours.overallPercent}%
+          </p>
+          <p className="text-[11px] text-muted">Schnitt der letzten Wochen</p>
+        </div>
+      </div>
+
+      {/* Utilisation per weekday — the basis for the recommendation. */}
+      {hours.suggestions.length > 0 && (
+        <div className="mt-5 flex flex-col gap-1.5">
+          {hours.suggestions.map((s) => (
+            <div key={s.weekday} className="flex items-center gap-3 text-xs">
+              <span className="w-8 shrink-0 font-medium">
+                {WEEKDAYS_SHORT[(s.weekday + 6) % 7]}
+              </span>
+              <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface">
+                <span
+                  className={`block h-full rounded-full ${
+                    s.percent >= 90
+                      ? "bg-red-500"
+                      : s.percent >= 70
+                        ? "bg-amber-500"
+                        : "bg-emerald-500"
+                  }`}
+                  style={{ width: `${Math.min(100, s.percent)}%` }}
+                />
+              </span>
+              <span className="w-10 shrink-0 text-right tabular-nums text-muted">
+                {s.percent}%
+              </span>
+              <span className="w-24 shrink-0 text-right text-muted">
+                {s.waitlist > 0 ? `${s.waitlist} auf Warteliste` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {top && top.percent >= 70 && (
+        <p className="mt-4 rounded-xl bg-brand-soft px-4 py-3 text-sm text-brand-700">
+          💡 <strong>{WEEKDAYS_FULL[top.weekday]}</strong> ist mit{" "}
+          {top.percent}% dein vollster Tag
+          {top.waitlist > 0 ? ` und ${top.waitlist} Kunden warten darauf` : ""}.
+          Zwei Stunden länger geöffnet wären grob{" "}
+          <strong>
+            {top.potentialPerMonth} zusätzliche Termine im Monat
+          </strong>{" "}
+          (≈ {priceFull(top.potentialPerMonth * 1500)}).
+        </p>
+      )}
+      {top && top.percent < 70 && (
+        <p className="mt-4 rounded-xl bg-surface px-4 py-3 text-sm text-muted">
+          Aktuell ist überall noch Luft — längere Öffnungszeiten würden sich
+          gerade nicht lohnen.
+        </p>
+      )}
+    </section>
+  );
+}
+
 // Visitor analytics from the site's own privacy-light beacon: daily chart,
 // totals, top pages, sources, devices, and booking conversion.
 function StatistikTab() {
@@ -3768,6 +3906,8 @@ function StatistikTab() {
 
   return (
     <div className="mt-6 flex flex-col gap-6">
+      <CapacityCard />
+
       <p className="text-xs text-muted">
         Eigene, cookie-freie Zählung direkt auf der Website (ohne Bots, ohne
         Admin-Aufrufe). Die Zählung läuft seit dem heutigen Update — die Kurve
@@ -5123,6 +5263,7 @@ function Availability({
   maxActiveBookingsPerEmail,
   noShowBlockThreshold,
   ownerCopyEmails,
+  waitlistMaxPerDay,
   onChange,
 }: {
   hours: DayHours[];
@@ -5135,6 +5276,7 @@ function Availability({
   maxActiveBookingsPerEmail: number;
   noShowBlockThreshold: number;
   ownerCopyEmails: boolean;
+  waitlistMaxPerDay: number;
   onChange: () => void;
 }) {
   return (
@@ -5149,7 +5291,9 @@ function Availability({
         onChange={onChange}
       />
       <OwnerCopyCard enabled={ownerCopyEmails} onChange={onChange} />
+      <WaitlistCapCard max={waitlistMaxPerDay} onChange={onChange} />
       <PushCard />
+      <CustomerPushCard />
       <HoursCard hours={hours} onChange={onChange} />
       <SpecialDaysCard specialDays={specialDays} onChange={onChange} />
       <TimeOffCard timeOff={timeOff} onChange={onChange} />
@@ -5216,6 +5360,179 @@ function OwnerCopyCard({
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
     </section>
+  );
+}
+
+// Cap on waitlist entries per day. A queue nobody realistically gets off
+// frustrates customers more than an honest "currently full".
+function WaitlistCapCard({
+  max: initialMax,
+  onChange,
+}: {
+  max: number;
+  onChange: () => void;
+}) {
+  const [max, setMax] = useState(initialMax);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const OPTIONS = [
+    { v: 0, label: "Unbegrenzt" },
+    { v: 3, label: "3 pro Tag" },
+    { v: 5, label: "5 pro Tag" },
+    { v: 8, label: "8 pro Tag" },
+    { v: 12, label: "12 pro Tag" },
+  ];
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waitlistMaxPerDay: max }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setMsg(res.ok ? "Gespeichert." : (d.error ?? "Fehler."));
+      if (res.ok) onChange();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">Warteliste begrenzen</h2>
+      <p className="mt-1 text-xs text-muted">
+        Wie viele Kunden pro Tag auf die Warteliste dürfen. Ist das Limit
+        erreicht, bekommen weitere Kunden einen freundlichen Hinweis statt
+        eines Platzes, auf den sie ohnehin nie nachrücken. Flexible Einträge
+        („nächster freier Termin“) zählen als eigene Gruppe.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        <select
+          value={max}
+          onChange={(e) => setMax(Number(e.target.value))}
+          className="rounded-lg border border-line bg-background px-3 py-2"
+        >
+          {OPTIONS.map((o) => (
+            <option key={o.v} value={o.v}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+        >
+          {saving ? "Speichern…" : "Speichern"}
+        </button>
+        {msg && <span className="text-sm text-muted">{msg}</span>}
+      </div>
+    </section>
+  );
+}
+
+type CustomerPushStats = {
+  total: number;
+  withEmail: number;
+  radar: number;
+  lastRegisteredAt: string | null;
+  last7Days: number;
+};
+
+// Visibility for customer notifications. Without this the push feature could
+// fail silently for weeks — nobody could tell "nobody wants it" apart from
+// "it's broken". The test button proves delivery end to end.
+function CustomerPushCard() {
+  const [stats, setStats] = useState<CustomerPushStats | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  function load() {
+    fetch("/api/admin/push/stats")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("failed"))))
+      .then(setStats)
+      .catch(() => setFailed(true));
+  }
+
+  useEffect(load, []);
+
+  async function sendTest() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/push/stats", { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      setMsg(
+        res.ok
+          ? d.sent > 0
+            ? `Testnachricht an ${d.sent} Gerät${d.sent === 1 ? "" : "e"} gesendet — schau auf dein Handy.`
+            : "Kein Gerät registriert. Aktiviere oben zuerst die Benachrichtigungen."
+          : (d.error ?? "Fehler."),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">Benachrichtigungen deiner Kunden</h2>
+      <p className="mt-1 text-xs text-muted">
+        Wie viele Kundengeräte Push-Nachrichten empfangen können — für
+        Termin-Erinnerungen und die Info bei frei gewordenen Plätzen.
+      </p>
+
+      {failed ? (
+        <p className="mt-3 text-sm text-muted">Konnte nicht geladen werden.</p>
+      ) : !stats ? (
+        <p className="mt-3 text-sm text-muted">Lädt…</p>
+      ) : (
+        <>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatBox label="Geräte gesamt" value={String(stats.total)} />
+            <StatBox label="Neu (7 Tage)" value={String(stats.last7Days)} />
+            <StatBox label="Mit Erinnerung" value={String(stats.withEmail)} />
+            <StatBox label="Termin-Radar" value={String(stats.radar)} />
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            {stats.lastRegisteredAt
+              ? `Zuletzt dazugekommen: ${formatDateLabel(new Date(stats.lastRegisteredAt), tz)}`
+              : "Noch kein Gerät registriert."}
+          </p>
+          {stats.total === 0 && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Noch kein einziges Kundengerät — falls das über Wochen so bleibt,
+              stimmt vermutlich etwas nicht.
+            </p>
+          )}
+        </>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          onClick={sendTest}
+          disabled={busy}
+          className="rounded-xl border border-line px-4 py-2 text-sm font-semibold hover:border-brand hover:text-brand disabled:opacity-50"
+        >
+          {busy ? "Sende…" : "Testnachricht an mich"}
+        </button>
+        {msg && <span className="text-xs text-muted">{msg}</span>}
+      </div>
+    </section>
+  );
+}
+
+function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-surface px-3 py-2.5">
+      <p className="text-lg font-bold tabular-nums">{value}</p>
+      <p className="text-[11px] text-muted">{label}</p>
+    </div>
   );
 }
 

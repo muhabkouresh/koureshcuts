@@ -64,6 +64,12 @@ model Settings {
   /// Owner-copy mails (new booking, waitlist, cancellation notices). Off =
   /// "Mail-Sparmodus": the owner relies on push only, halving daily volume.
   ownerCopyEmails   Boolean  @default(true)
+  /// Max waitlist entries per day (0 = unlimited). A queue nobody ever gets
+  /// off frustrates more than it helps.
+  waitlistMaxPerDay Int      @default(0)
+  /// When the "next week is nearly full" push last went out, so the daily
+  /// cron warns once per situation instead of every morning.
+  capacityWarnedAt  DateTime?
   updatedAt         DateTime @updatedAt
 }
 

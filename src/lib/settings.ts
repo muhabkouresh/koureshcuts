@@ -14,6 +14,8 @@ export type SettingsPatch = {
   noShowBlockThreshold?: number;
   winbackWeeks?: number;
   ownerCopyEmails?: boolean;
+  waitlistMaxPerDay?: number;
+  capacityWarnedAt?: Date | null;
 };
 
 export async function getSettings() {

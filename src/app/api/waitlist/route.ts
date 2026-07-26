@@ -5,6 +5,7 @@ import { joinWaitlistSchema } from "@/lib/validation";
 import { sendWaitlistJoinedEmails } from "@/lib/email";
 import { todayInTz, zonedToUtc } from "@/lib/time";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { getSettings } from "@/lib/settings";
 
 // POST /api/waitlist — join the waitlist: either for one fully-booked day
 // (date set) or flexibly for the next free slot (optionally limited to
@@ -68,6 +69,29 @@ export async function POST(request: NextRequest) {
 
   if (existing) {
     return Response.json({ ok: true, already: true });
+  }
+
+  // Cap the queue per day (0 = off). A waitlist so long that nobody realistically
+  // gets a spot frustrates customers more than an honest "currently full".
+  const settings = await getSettings();
+  if (settings.waitlistMaxPerDay > 0) {
+    const sameDay = await prisma.waitlistEntry.count({
+      where: date
+        ? { date }
+        : // Flexible entries share one bucket of their own.
+          { date: null },
+    });
+    if (sameDay >= settings.waitlistMaxPerDay) {
+      return Response.json(
+        {
+          error: date
+            ? "Die Warteliste für diesen Tag ist leider schon voll. Schau gern, ob an einem anderen Tag noch etwas frei ist."
+            : "Unsere Warteliste ist aktuell voll. Schau gern im Kalender, ob ein Tag noch freie Zeiten hat.",
+          full: true,
+        },
+        { status: 409 },
+      );
+    }
   }
 
   const created = await prisma.waitlistEntry.create({

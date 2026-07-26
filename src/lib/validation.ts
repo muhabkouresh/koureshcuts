@@ -187,6 +187,8 @@ export const settingsSchema = z
     winbackWeeks: z.number().int().min(0).max(52).optional(),
     // Owner-copy mails on bookings etc. (false = Mail-Sparmodus, push only).
     ownerCopyEmails: z.boolean().optional(),
+    // Max waitlist entries per day (0 = unlimited).
+    waitlistMaxPerDay: z.number().int().min(0).max(50).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: "Keine Änderungen übergeben.",
