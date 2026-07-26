@@ -5,6 +5,7 @@ import {
   enablePush,
   isStandalone,
   pushAlreadyOn,
+  pushErrorText,
   pushSupported,
 } from "@/lib/pushClient";
 
@@ -18,9 +19,8 @@ const DISMISS_KEY = "kc_push_banner_dismissed";
  */
 export default function PushBanner() {
   const [show, setShow] = useState(false);
-  const [state, setState] = useState<"idle" | "busy" | "on" | "denied" | "error">(
-    "idle",
-  );
+  const [state, setState] = useState<"idle" | "busy" | "on" | "error">("idle");
+  const [errorText, setErrorText] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +51,7 @@ export default function PushBanner() {
 
   async function turnOn() {
     setState("busy");
+    setErrorText(null);
     const res = await enablePush();
     if (res === "ok") {
       setState("on");
@@ -62,7 +63,8 @@ export default function PushBanner() {
       window.setTimeout(() => setShow(false), 2600);
       return;
     }
-    setState(res === "denied" ? "denied" : "error");
+    setErrorText(pushErrorText(res));
+    setState("error");
   }
 
   if (!show) return null;
@@ -105,19 +107,15 @@ export default function PushBanner() {
           disabled={state === "busy"}
           className="btn-shine mt-3 w-full rounded-full bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {state === "busy" ? "Wird aktiviert…" : "Jetzt aktivieren"}
+          {state === "busy"
+            ? "Wird aktiviert…"
+            : state === "error"
+              ? "Nochmal versuchen"
+              : "Jetzt aktivieren"}
         </button>
 
-        {state === "denied" && (
-          <p className="mt-2 text-xs text-muted">
-            Du hast Benachrichtigungen abgelehnt. Du kannst sie in den
-            Einstellungen deines Handys für diese App wieder erlauben.
-          </p>
-        )}
-        {state === "error" && (
-          <p className="mt-2 text-xs text-muted">
-            Hat nicht geklappt — versuch es später noch einmal.
-          </p>
+        {state === "error" && errorText && (
+          <p className="mt-2 text-xs text-muted">{errorText}</p>
         )}
       </div>
     </div>

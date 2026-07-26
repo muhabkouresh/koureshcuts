@@ -46,11 +46,23 @@ export async function pushAlreadyOn(): Promise<boolean> {
   }
 }
 
-export type EnablePushResult = "ok" | "denied" | "unsupported" | "error";
+export type EnablePushResult =
+  | "ok"
+  | "denied"
+  | "blocked"
+  | "unsupported"
+  | "rate-limited"
+  | "error";
 
 /**
  * Ask for permission, subscribe, and register the device with the server.
  * `reminderOnly` devices get appointment reminders but no "slot freed" alerts.
+ *
+ * MUST be called straight from a click handler. Safari — and iOS especially —
+ * only accepts Notification.requestPermission() while a user gesture is still
+ * "live", and every awaited call before it voids that gesture. So permission
+ * is requested first and the config fetch happens afterwards; doing it the
+ * other way round made this fail on iPhones with a generic error.
  */
 export async function enablePush(opts: {
   date?: string;
@@ -58,12 +70,23 @@ export async function enablePush(opts: {
   reminderOnly?: boolean;
 } = {}): Promise<EnablePushResult> {
   if (!pushSupported()) return "unsupported";
+
+  // Already turned down for good — asking again is a no-op in most browsers,
+  // so tell the caller instead of showing a misleading failure.
+  if (Notification.permission === "denied") return "blocked";
+
+  let permission: NotificationPermission;
+  try {
+    permission = await Notification.requestPermission();
+  } catch (err) {
+    console.error("push permission request failed", err);
+    return "error";
+  }
+  if (permission !== "granted") return "denied";
+
   try {
     const conf = await fetch("/api/push").then((r) => r.json());
     if (!conf.enabled || !conf.publicKey) return "unsupported";
-
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return "denied";
 
     const reg = await navigator.serviceWorker.ready;
     const sub =
@@ -83,8 +106,30 @@ export async function enablePush(opts: {
         reminderOnly: opts.reminderOnly ?? false,
       }),
     });
-    return res.ok ? "ok" : "error";
-  } catch {
+    if (res.status === 429) return "rate-limited";
+    if (!res.ok) {
+      console.error("push registration rejected", res.status);
+      return "error";
+    }
+    return "ok";
+  } catch (err) {
+    console.error("push subscribe failed", err);
     return "error";
+  }
+}
+
+/** German explanation for a failed attempt — shown directly to the customer. */
+export function pushErrorText(result: EnablePushResult): string {
+  switch (result) {
+    case "denied":
+      return "Du hast die Nachfrage abgelehnt. Tippe erneut, wenn du es dir anders überlegst.";
+    case "blocked":
+      return "Benachrichtigungen sind für diese Seite gesperrt. Du kannst sie in den Einstellungen deines Handys wieder erlauben.";
+    case "unsupported":
+      return "Dieses Gerät unterstützt keine Benachrichtigungen. Auf dem iPhone klappt es nur aus der installierten App heraus.";
+    case "rate-limited":
+      return "Zu viele Versuche in kurzer Zeit. Bitte warte ein paar Minuten.";
+    default:
+      return "Hat gerade nicht geklappt. Bitte versuche es später noch einmal.";
   }
 }

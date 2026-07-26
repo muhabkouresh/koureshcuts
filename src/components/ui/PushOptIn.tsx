@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { enablePush, isStandalone, pushSupported } from "@/lib/pushClient";
+import {
+  enablePush,
+  isStandalone,
+  pushErrorText,
+  pushSupported,
+} from "@/lib/pushClient";
 
 // Customer push opt-in, used after booking, after joining the waitlist, on
 // "Meine Termine" and on /app. The subscribe logic itself lives in
@@ -38,6 +43,9 @@ export default function PushOptIn({
   // exists — which is why almost nobody had it enabled.
   const [needsInstall, setNeedsInstall] = useState(false);
   const [state, setState] = useState<"idle" | "busy" | "on" | "error">("idle");
+  // Why it failed, so the customer sees something actionable instead of a
+  // blanket "didn't work".
+  const [errorText, setErrorText] = useState<string | null>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect -- one-time client-only feature detection (browser APIs unavailable during SSR) */
   useEffect(() => {
@@ -75,8 +83,14 @@ export default function PushOptIn({
 
   async function enable() {
     setState("busy");
+    setErrorText(null);
     const res = await enablePush({ date, email, reminderOnly });
-    setState(res === "ok" ? "on" : "error");
+    if (res === "ok") {
+      setState("on");
+      return;
+    }
+    setErrorText(pushErrorText(res));
+    setState("error");
   }
 
   const inner =
@@ -90,12 +104,13 @@ export default function PushOptIn({
           onClick={enable}
           className="rounded-full bg-background px-4 py-2 text-xs font-semibold ring-1 ring-line transition-colors hover:ring-brand disabled:opacity-50"
         >
-          {state === "busy" ? "…" : label}
+          {state === "busy" ? "…" : state === "error" ? "Nochmal versuchen" : label}
         </button>
         {state === "error" && (
           <p className="mt-1.5 text-xs text-muted">
-            Push konnte nicht aktiviert werden — die E-Mail-Benachrichtigung
-            funktioniert trotzdem.
+            {errorText}
+            <br />
+            Die E-Mail-Benachrichtigung funktioniert unabhängig davon.
           </p>
         )}
         {hint && state !== "error" && (
