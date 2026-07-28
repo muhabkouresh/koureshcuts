@@ -298,6 +298,9 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       }
       setResult(data as BookingResult);
       setStep("done");
+      // Peak motivation for installing the app: the customer now has an
+      // appointment the app would remind them about (see InstallPrompt).
+      window.dispatchEvent(new CustomEvent("kc:booked"));
     } catch {
       setError("Netzwerkfehler. Bitte erneut versuchen.");
     } finally {
@@ -628,7 +631,9 @@ export default function BookingFlow({ services }: { services: Service[] }) {
             label="🔔 Push-Erinnerung aktivieren"
             activeText="🔔 Aktiv — deine Termin-Erinnerung kommt zusätzlich als Push auf dieses Gerät."
             hint="Zusätzlich zur E-Mail — damit du deinen Termin garantiert nicht vergisst."
-            installPitch="Mit der App bekommst du deine Termin-Erinnerung direkt aufs Handy — zusätzlich zur E-Mail."
+            // The install banner (InstallPrompt) fires on this same screen —
+            // a second install call-to-action here would just be noise.
+            hideInstallPitch
           />
 
           {service && !result.pending && (

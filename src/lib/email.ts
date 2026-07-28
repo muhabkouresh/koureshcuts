@@ -45,6 +45,23 @@ function layout(title: string, bodyHtml: string): string {
   </div></body></html>`;
 }
 
+/**
+ * "Get the app" block for transactional mails. This is the one channel that
+ * reaches every customer on the device they'd install on — the website footer
+ * only reaches people who scroll. Kept visually quiet so it never competes
+ * with the actual purpose of the mail.
+ */
+function appPromo(): string {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  return `<div style="margin:24px 0 0;padding:16px;background:#fdf6f7;border:1px solid #f0dfe1;border-radius:12px;text-align:center">
+      <p style="margin:0;font-size:14px;font-weight:700;color:#18181b">📲 ${siteConfig.name} aufs Handy</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#666;line-height:1.5">
+        Erinnerung direkt aufs Handy und als Erster erfahren, wenn kurzfristig ein Termin frei wird.
+      </p>
+      <a href="${siteUrl}/app" style="display:inline-block;margin-top:12px;background:#8a1f2b;color:#fff;text-decoration:none;padding:11px 24px;border-radius:999px;font-size:14px;font-weight:700">In 20 Sekunden einrichten</a>
+    </div>`;
+}
+
 function detailsTable(data: BookingEmailData): string {
   const when = formatDateTimeLabel(data.start, siteConfig.timezone);
   return `<table style="width:100%;border-collapse:collapse;font-size:14px">
@@ -267,7 +284,8 @@ export async function sendConfirmationEmails(data: BookingEmailData): Promise<vo
      <hr style="border:none;border-top:1px solid #eee;margin:20px 0"/>
      <table style="width:100%;border-collapse:collapse">${detailRows}</table>
      <p style="font-size:12px;color:#9ca3af;margin-top:18px">Eine Kalenderdatei (.ics) ist ebenfalls angehängt.</p>
-     <p style="font-size:12px;color:#9ca3af;margin-top:8px">Alle deine Buchungen im Überblick: <a href="${myAppointmentsUrl(data.customerEmail)}" style="color:#8a1f2b;text-decoration:underline">Meine Termine</a></p>`,
+     <p style="font-size:12px;color:#9ca3af;margin-top:8px">Alle deine Buchungen im Überblick: <a href="${myAppointmentsUrl(data.customerEmail)}" style="color:#8a1f2b;text-decoration:underline">Meine Termine</a></p>
+     ${appPromo()}`,
   );
 
   await send({
@@ -418,7 +436,8 @@ export async function sendReminderEmail(data: BookingEmailData): Promise<void> {
        <a href="${rescheduleUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;margin:0 6px 8px 0">Termin verschieben</a>
        <a href="${cancelUrl(data.id)}" style="display:inline-block;border:1px solid #e5e7eb;color:#8a1f2b;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;margin:0 0 8px">Termin absagen</a>
      </div>
-     <p style="font-size:13px;color:#888;margin-top:16px">Bis bald!</p>`,
+     <p style="font-size:13px;color:#888;margin-top:16px">Bis bald!</p>
+     ${appPromo()}`,
   );
   await send({
     to: data.customerEmail,

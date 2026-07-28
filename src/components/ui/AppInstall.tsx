@@ -128,26 +128,108 @@ function StepCard({
   platform: Platform;
   canInstall: boolean;
 }) {
+  // Apple allows no programmatic install, so the manual steps are the whole
+  // product here — shown as pictures of what to look for rather than prose,
+  // because "tap the share icon" is easy to read past and hard to find.
   if (platform === "ios") {
     return (
-      <Steps
-        title="Auf dem iPhone (Safari)"
-        steps={[
-          <>
-            Tippe unten in Safari auf das <b>Teilen-Symbol</b>{" "}
-            <ShareIcon /> (Quadrat mit Pfeil nach oben).
-          </>,
-          <>
-            Scrolle etwas nach unten und tippe auf{" "}
-            <b>„Zum Home-Bildschirm“</b>.
-          </>,
-          <>
-            Oben rechts auf <b>„Hinzufügen“</b> — fertig, das {siteName}-Symbol
-            liegt jetzt auf deinem Home-Bildschirm.
-          </>,
-        ]}
-        note="Wichtig: Das klappt nur in Safari. Bist du in Chrome oder im Instagram-Browser, öffne die Seite zuerst dort."
-      />
+      <div className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+        <h2 className="text-base font-bold">Auf dem iPhone — 3 Schritte</h2>
+
+        <VisualStep
+          n={1}
+          text={
+            <>
+              Tippe <b>ganz unten in Safari</b> auf dieses Symbol:
+            </>
+          }
+        >
+          {/* Safari bottom bar with the share button called out. */}
+          <div className="relative rounded-xl bg-surface p-3">
+            <div className="flex items-center justify-around rounded-lg bg-background px-2 py-2.5 ring-1 ring-line">
+              <BarIcon d="M15 18l-6-6 6-6" />
+              <BarIcon d="M9 18l6-6-6-6" muted />
+              <span className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 ring-2 ring-brand">
+                <svg
+                  className="h-5 w-5 text-brand"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  aria-label="Teilen"
+                >
+                  <path
+                    d="M12 3v12M8 7l4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <BarIcon d="M4 6h16M4 12h16M4 18h16" muted />
+              <BarIcon d="M3 5h8v8H3zM13 11h8v8h-8z" muted />
+            </div>
+            <span className="absolute -top-1 left-1/2 -translate-x-1/2 rounded-full bg-brand px-2 py-0.5 text-[10px] font-bold text-white">
+              hier tippen
+            </span>
+          </div>
+        </VisualStep>
+
+        <VisualStep
+          n={2}
+          text={
+            <>
+              Etwas nach unten wischen und <b>„Zum Home-Bildschirm“</b> wählen:
+            </>
+          }
+        >
+          {/* The share-sheet row they need to find. */}
+          <div className="overflow-hidden rounded-xl bg-surface p-2">
+            <div className="flex items-center justify-between rounded-lg px-3 py-2 opacity-40">
+              <span className="text-sm">Lesezeichen hinzufügen</span>
+              <SquareGlyph d="M6 4h9l5 5v11H6z" />
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-background px-3 py-2.5 ring-2 ring-brand">
+              <span className="text-sm font-semibold">Zum Home-Bildschirm</span>
+              <SquareGlyph d="M12 8v8M8 12h8" brand />
+            </div>
+            <div className="flex items-center justify-between rounded-lg px-3 py-2 opacity-40">
+              <span className="text-sm">Markierung hinzufügen</span>
+              <SquareGlyph d="M4 7h16v10H4z" />
+            </div>
+          </div>
+        </VisualStep>
+
+        <VisualStep
+          n={3}
+          text={
+            <>
+              Oben rechts auf <b>„Hinzufügen“</b> — fertig.
+            </>
+          }
+          last
+        >
+          <div className="flex items-center justify-between rounded-xl bg-surface px-3 py-2.5">
+            <span className="text-sm text-muted">Abbrechen</span>
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.png"
+                alt=""
+                className="h-6 w-6 rounded-md object-cover"
+              />
+              {siteName}
+            </span>
+            <span className="rounded-lg bg-brand px-2.5 py-1 text-sm font-bold text-white">
+              Hinzufügen
+            </span>
+          </div>
+        </VisualStep>
+
+        <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Wichtig: Das klappt nur in <b>Safari</b>. Bist du gerade in Chrome
+          oder im Instagram-Browser, öffne die Seite zuerst dort.
+        </p>
+      </div>
     );
   }
   if (platform === "android") {
@@ -200,6 +282,62 @@ function StepCard({
   );
 }
 
+/** One numbered step with an illustration of what the screen looks like. */
+function VisualStep({
+  n,
+  text,
+  children,
+  last,
+}: {
+  n: number;
+  text: React.ReactNode;
+  children: React.ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <div className={last ? "mt-5" : "mt-5 border-b border-line pb-5"}>
+      <div className="flex gap-3">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-white">
+          {n}
+        </span>
+        <span className="pt-0.5 text-sm leading-relaxed">{text}</span>
+      </div>
+      <div className="mt-3 pl-10">{children}</div>
+    </div>
+  );
+}
+
+/** Muted glyph standing in for the other buttons in Safari's toolbar. */
+function BarIcon({ d, muted }: { d: string; muted?: boolean }) {
+  return (
+    <svg
+      className={`h-5 w-5 ${muted ? "text-stone-300" : "text-stone-400"}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+    >
+      <path d={d} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Boxed glyph as used on the right of iOS share-sheet rows. */
+function SquareGlyph({ d, brand }: { d: string; brand?: boolean }) {
+  return (
+    <svg
+      className={`h-5 w-5 ${brand ? "text-brand" : "text-stone-400"}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+    >
+      <rect x="3" y="3" width="18" height="18" rx="4" strokeWidth="1.6" />
+      <path d={d} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Steps({
   title,
   steps,
@@ -227,21 +365,3 @@ function Steps({
   );
 }
 
-function ShareIcon() {
-  return (
-    <svg
-      className="inline h-4 w-4 align-[-3px] text-brand"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      aria-label="Teilen"
-    >
-      <path
-        d="M12 3v12M8 7l4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}

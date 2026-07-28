@@ -31,12 +31,9 @@ export default function InstallPrompt() {
       return;
     }
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
     const onBip = (e: Event) => {
       e.preventDefault();
       bipRef.current = e as BipEvent;
-      timer = setTimeout(() => setMode("android"), 2500);
     };
     const onInstalled = () => setMode("hidden");
     window.addEventListener("beforeinstallprompt", onBip);
@@ -53,18 +50,21 @@ export default function InstallPrompt() {
       /instagram|fbav|fban|fb_iab|tiktok|musical_ly|snapchat|line\/|micromessenger/i.test(
         ua,
       );
-    if (isInApp) {
-      timer = setTimeout(() => setMode("inapp"), 2500);
-    } else if (iosDevice && isSafari) {
-      // iOS has no install event — show the how-to in Safari only (other iOS
-      // browsers can't add to the home screen).
-      timer = setTimeout(() => setMode("ios"), 2500);
-    }
+
+    // Shown after a booking, not on arrival: a visitor who just wants an
+    // appointment has no reason to install anything yet, while someone who
+    // has just booked gets immediate value out of it (reminder, freed slots).
+    const onBooked = () => {
+      if (bipRef.current) setMode("android");
+      else if (isInApp) setMode("inapp");
+      else if (iosDevice && isSafari) setMode("ios");
+    };
+    window.addEventListener("kc:booked", onBooked);
 
     return () => {
-      if (timer) clearTimeout(timer);
       window.removeEventListener("beforeinstallprompt", onBip);
       window.removeEventListener("appinstalled", onInstalled);
+      window.removeEventListener("kc:booked", onBooked);
     };
   }, []);
 

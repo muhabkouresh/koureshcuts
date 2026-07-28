@@ -25,6 +25,8 @@ export default function PushOptIn({
   hint,
   /** Why installing is worth it — shown to iPhone users who can't opt in yet. */
   installPitch = "Auf dem iPhone gehen Push-Nachrichten nur aus der App heraus.",
+  /** Set where another install call-to-action already covers this screen. */
+  hideInstallPitch = false,
 }: {
   date?: string;
   email?: string;
@@ -36,6 +38,7 @@ export default function PushOptIn({
   /** Small print below the button (e.g. the iOS install requirement). */
   hint?: string;
   installPitch?: string;
+  hideInstallPitch?: boolean;
 }) {
   const [supported, setSupported] = useState(false);
   // iOS only exposes the Push API inside an installed web app. Without this
@@ -57,6 +60,8 @@ export default function PushOptIn({
     if (isIos && !isStandalone()) setNeedsInstall(true);
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  if (needsInstall && hideInstallPitch) return null;
 
   if (needsInstall) {
     const box = (
