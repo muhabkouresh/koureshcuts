@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { BUSY_STATUSES, AppointmentStatus, SLOT_INTERVAL_MINUTES } from "@/lib/constants";
@@ -47,31 +48,48 @@ export async function POST(request: Request) {
 
   let id: string;
   try {
-    const created = await prisma.$transaction(async (tx) => {
-      const clash = await tx.appointment.findFirst({
-        where: {
-          status: { in: BUSY_STATUSES },
-          startTime: { lt: end },
-          endTime: { gt: startDate },
-        },
-        select: { id: true },
-      });
-      if (clash) throw new Error("SLOT_TAKEN");
-      return tx.appointment.create({
-        data: {
-          serviceId: placeholder.id,
-          customerName: "— Gesperrt —",
-          customerEmail: "",
-          customerPhone: "",
-          notes: (reason ?? "").slice(0, 200),
-          startTime: startDate,
-          endTime: end,
-          status: AppointmentStatus.BLOCKED,
-        },
-        select: { id: true },
-      });
-    });
-    id = created.id;
+    // Serializable like every other write path — a block and an online booking
+    // must never both win the same slot.
+    let created: { id: string } | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        created = await prisma.$transaction(
+          async (tx) => {
+            const clash = await tx.appointment.findFirst({
+              where: {
+                status: { in: BUSY_STATUSES },
+                startTime: { lt: end },
+                endTime: { gt: startDate },
+              },
+              select: { id: true },
+            });
+            if (clash) throw new Error("SLOT_TAKEN");
+            return tx.appointment.create({
+              data: {
+                serviceId: placeholder.id,
+                customerName: "— Gesperrt —",
+                customerEmail: "",
+                customerPhone: "",
+                notes: (reason ?? "").slice(0, 200),
+                startTime: startDate,
+                endTime: end,
+                status: AppointmentStatus.BLOCKED,
+              },
+              select: { id: true },
+            });
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+        break;
+      } catch (err) {
+        const retriable =
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === "P2034";
+        if (retriable && attempt < 3) continue;
+        throw err;
+      }
+    }
+    id = created!.id;
   } catch (err) {
     if (err instanceof Error && err.message === "SLOT_TAKEN") {
       return Response.json(
