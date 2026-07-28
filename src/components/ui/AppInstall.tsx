@@ -208,18 +208,18 @@ function StepCard({
           }
           last
         >
-          <div className="flex items-center justify-between rounded-xl bg-surface px-3 py-2.5">
-            <span className="text-sm text-muted">Abbrechen</span>
-            <span className="flex items-center gap-2 text-sm font-semibold">
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-surface px-2.5 py-2.5">
+            <span className="shrink-0 text-xs text-muted">Abbrechen</span>
+            <span className="flex min-w-0 items-center gap-1.5 text-xs font-semibold">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/logo.png"
                 alt=""
-                className="h-6 w-6 rounded-md object-cover"
+                className="h-5 w-5 shrink-0 rounded object-cover"
               />
-              {siteName}
+              <span className="truncate">{siteName}</span>
             </span>
-            <span className="rounded-lg bg-brand px-2.5 py-1 text-sm font-bold text-white">
+            <span className="shrink-0 rounded-lg bg-brand px-2 py-1 text-xs font-bold text-white">
               Hinzufügen
             </span>
           </div>
@@ -302,7 +302,9 @@ function VisualStep({
         </span>
         <span className="pt-0.5 text-sm leading-relaxed">{text}</span>
       </div>
-      <div className="mt-3 pl-10">{children}</div>
+      {/* Full width, not indented under the number: on a 375px phone the
+          indent left too little room and the mock rows overflowed. */}
+      <div className="mt-3">{children}</div>
     </div>
   );
 }
