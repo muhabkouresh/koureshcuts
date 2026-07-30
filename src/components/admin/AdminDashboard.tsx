@@ -3799,8 +3799,8 @@ function StatistikTab() {
     <div className="mt-6 flex flex-col gap-6">
       <p className="text-xs text-muted">
         Eigene, cookie-freie Zählung direkt auf der Website (ohne Bots, ohne
-        Admin-Aufrufe). Die Zählung läuft seit dem heutigen Update — die Kurve
-        füllt sich Tag für Tag.
+        Admin-Aufrufe). Aktualisiert sich automatisch, solange dieser Tab offen
+        ist.
       </p>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -3939,7 +3939,7 @@ function AppUsageCard({ app }: { app: SiteStats["app"] }) {
           value={String(app.pushDevices)}
         />
       </div>
-      {(app.ios > 0 || app.android > 0) && (
+      {app.total > 0 && (
         <p className="mt-3 text-xs text-muted">
           Davon {app.ios} × iPhone/iPad, {app.android} × Android
           {app.total - app.ios - app.android > 0
