@@ -15,7 +15,21 @@ export async function GET() {
   const today = todayInTz(tz);
   const firstDay = addDaysToDateStr(today, -29);
 
-  const [views, bookings7, bookings30] = await Promise.all([
+  const now = Date.now();
+  const day7Ago = new Date(now - 7 * 24 * 60 * 60_000);
+  const day30Ago = new Date(now - 30 * 24 * 60 * 60_000);
+
+  const [
+    views,
+    bookings7,
+    bookings30,
+    appTotal,
+    appActive30,
+    appNew7,
+    appIos,
+    appAndroid,
+    pushDevices,
+  ] = await Promise.all([
     prisma.pageView.findMany({
       where: { day: { gte: firstDay } },
       select: {
@@ -38,6 +52,17 @@ export async function GET() {
         createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60_000) },
       },
     }),
+    // Installed apps. Counted by a beacon that only fires in standalone
+    // display mode, keyed on a per-device id — one row per device, not per
+    // app start. Uninstalls are invisible, hence the "active" cut as well.
+    prisma.appDevice.count(),
+    prisma.appDevice.count({ where: { lastSeenAt: { gte: day30Ago } } }),
+    prisma.appDevice.count({ where: { firstSeenAt: { gte: day7Ago } } }),
+    prisma.appDevice.count({ where: { platform: "ios" } }),
+    prisma.appDevice.count({ where: { platform: "android" } }),
+    // Cross-check: on iPhones push only works inside the installed app, so
+    // this is a hard floor for how many people really have it.
+    prisma.customerPush.count(),
   ]);
 
   // Daily series (last 30 days, oldest → newest).
@@ -95,5 +120,13 @@ export async function GET() {
     topReferrers: top(referrers),
     devices: top(devices),
     bookings: { week: bookings7, month: bookings30 },
+    app: {
+      total: appTotal,
+      active30: appActive30,
+      new7: appNew7,
+      ios: appIos,
+      android: appAndroid,
+      pushDevices,
+    },
   });
 }

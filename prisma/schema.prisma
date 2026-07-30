@@ -191,6 +191,23 @@ model PageView {
   @@index([day])
 }
 
+/// One device that has the site installed as an app (home screen / PWA).
+/// The beacon behind it only fires in standalone display mode, so a plain
+/// browser visit never lands here. `deviceId` is a random id kept in the
+/// device's own storage, so re-opening the app updates a row instead of
+/// adding one. Uninstalls can't be observed — `lastSeenAt` is what separates
+/// "installed" from "still in use".
+model AppDevice {
+  id          String   @id @default(cuid())
+  deviceId    String   @unique
+  /// "ios" | "android" | "desktop" — coarse, derived from the user agent.
+  platform    String   @default("")
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@index([lastSeenAt])
+}
+
 /// A manually logged extra income entry so the Umsatz tab shows the full
 /// picture, not just services. `kind` is "product" (wax, shampoo, …) or "tip"
 /// (Trinkgeld). `date` is the start-of-day UTC instant for the shop timezone.

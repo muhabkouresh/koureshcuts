@@ -3719,6 +3719,14 @@ type SiteStats = {
   topReferrers: { label: string; count: number }[];
   devices: { label: string; count: number }[];
   bookings: { week: number; month: number };
+  app?: {
+    total: number;
+    active30: number;
+    new7: number;
+    ios: number;
+    android: number;
+    pushDevices: number;
+  };
 };
 
 const PATH_LABELS: Record<string, string> = {
@@ -3735,18 +3743,37 @@ function StatistikTab() {
   const [stats, setStats] = useState<SiteStats | null>(null);
   const [failed, setFailed] = useState(false);
 
+  // Keeps the tab on live numbers: first load, then again whenever the tab
+  // comes back into view and every 60 s while it is visible. Without this the
+  // figures froze at whatever they were when the dashboard was opened.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/admin/stats")
-      .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled) setStats(d);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
+    const load = () => {
+      fetch("/api/admin/stats", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error("stats"))))
+        .then((d) => {
+          if (!cancelled) {
+            setStats(d);
+            setFailed(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setFailed(true);
+        });
+    };
+    load();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const timer = setInterval(onVisible, 60_000);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", load);
     return () => {
       cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", load);
     };
   }, []);
 
@@ -3798,6 +3825,8 @@ function StatistikTab() {
           sub={`${stats.bookings.month} Buchungen / 30 Tage`}
         />
       </div>
+
+      <AppUsageCard app={stats.app} />
 
       <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
         <h2 className="text-sm font-semibold">Besucher pro Tag (30 Tage)</h2>
@@ -3888,6 +3917,45 @@ function StatistikTab() {
         </section>
       )}
     </div>
+  );
+}
+
+// How many customers actually have the site on their home screen. Counted by
+// a beacon that only fires when the site runs standalone, keyed on a per-device
+// id — so this is devices, not app starts. Push devices are shown alongside as
+// a sanity check: on iPhones push exists only inside the installed app.
+function AppUsageCard({ app }: { app: SiteStats["app"] }) {
+  if (!app) return null;
+  const lost = app.total - app.active30;
+  return (
+    <section className="rounded-2xl border border-line bg-background p-5 shadow-soft">
+      <h2 className="text-sm font-semibold">📲 Kunden mit der App</h2>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatBox label="Geräte mit App" value={String(app.total)} />
+        <StatBox label="Aktiv (30 Tage)" value={String(app.active30)} />
+        <StatBox label="Neu (7 Tage)" value={String(app.new7)} />
+        <StatBox
+          label="Mit Benachrichtigung"
+          value={String(app.pushDevices)}
+        />
+      </div>
+      {(app.ios > 0 || app.android > 0) && (
+        <p className="mt-3 text-xs text-muted">
+          Davon {app.ios} × iPhone/iPad, {app.android} × Android
+          {app.total - app.ios - app.android > 0
+            ? `, ${app.total - app.ios - app.android} × Computer`
+            : ""}
+          {lost > 0 ? ` · ${lost} seit über 30 Tagen nicht geöffnet` : ""}.
+        </p>
+      )}
+      <p className="mt-2 text-[11px] leading-relaxed text-muted">
+        Gezählt wird jedes Gerät, das die Seite als App geöffnet hat — beim
+        ersten Öffnen nach diesem Update. Wer die App schon installiert hat,
+        taucht also erst auf, sobald er sie das nächste Mal startet. Eine
+        Deinstallation lässt sich technisch nicht erkennen; dafür steht daneben,
+        wie viele davon zuletzt aktiv waren.
+      </p>
+    </section>
   );
 }
 
