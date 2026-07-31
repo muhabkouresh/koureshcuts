@@ -1,11 +1,19 @@
 import type { NextRequest } from "next/server";
 import { getMonthAvailability } from "@/lib/availability";
 
-// Availability must always reflect the current DB (time-off, bookings, hours),
-// so this route is never cached.
+// This route answers only WHICH DAYS of a month have at least one free slot —
+// not the times. That is far less volatile than the per-day slot list (which
+// stays no-store), identical for every visitor, and it is the request the
+// calendar waits on. A short shared cache therefore makes the calendar appear
+// almost instantly for everyone after the first visitor of that half-minute.
+// Worst case: a day that just filled up still looks open for a few seconds —
+// tapping it then shows the day view (uncached) with the waitlist.
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const CACHE = {
+  "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+};
 const NO_STORE = { "Cache-Control": "no-store, max-age=0" };
 
 // GET /api/availability/month?serviceId=...&year=2026&month=4
@@ -31,7 +39,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await getMonthAvailability(serviceId, year, month);
-    return Response.json(result, { headers: NO_STORE });
+    return Response.json(result, { headers: CACHE });
   } catch (err) {
     const message = err instanceof Error ? err.message : "UNKNOWN";
     if (message === "INVALID_SERVICE") {

@@ -8,7 +8,7 @@ import {
   monthLabel,
   toDateStr,
   todayInTz,
-} from "@/lib/time";
+} from "@/lib/timeFormat";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const tz = siteConfig.timezone;

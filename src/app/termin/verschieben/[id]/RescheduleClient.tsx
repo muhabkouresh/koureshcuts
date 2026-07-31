@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { siteConfig } from "@/config/site";
 import { Calendar } from "@/components/booking/BookingFlow";
-import { formatClock, formatDateTimeLabel } from "@/lib/time";
+import { formatClock, formatDateTimeLabel } from "@/lib/timeFormat";
 
 type Slot = { start: string; end: string };
 

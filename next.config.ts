@@ -45,9 +45,26 @@ const securityHeaders = [
   },
 ];
 
+// Files in /public are served with `max-age=0, must-revalidate` by default, so
+// the logo and app icons cost a round trip on every single page load. They are
+// brand assets that change once a year at most; an hour of caching plus a day
+// of stale-while-revalidate removes that trip without making an update wait.
+const staticAssetCache = [
+  {
+    key: "Cache-Control",
+    value: "public, max-age=3600, stale-while-revalidate=86400",
+  },
+];
+
 const nextConfig: NextConfig = {
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      {
+        source: "/:file(logo.png|apple-icon.png|icon-192.png|icon-512.png|favicon.ico)",
+        headers: staticAssetCache,
+      },
+    ];
   },
 };
 

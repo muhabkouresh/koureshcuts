@@ -15,7 +15,7 @@ import {
   todayInTz,
   addDaysToDateStr,
   longDateFromStr,
-} from "@/lib/time";
+} from "@/lib/timeFormat";
 import PushOptIn from "@/components/ui/PushOptIn";
 
 export type Service = {
@@ -151,14 +151,42 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Prefetch the current month's availability for every service as soon as the
-  // booking section renders, so picking a service shows the calendar instantly.
+  // Prefetch the current month's availability so picking a service shows the
+  // calendar instantly. Two refinements over "one request per service":
+  //  - Availability depends only on the service DURATION, so services of equal
+  //    length share a result. With two 30-minute services that halves the
+  //    requests; the second one used to queue behind the first and was the
+  //    slowest thing on the page (over a second, measured).
+  //  - It runs in idle time, so it never competes with the first paint.
   useEffect(() => {
     const today = todayInTz(tz);
     const [y, m] = today.split("-").map(Number);
+    const byDuration = new Map<number, Service[]>();
     for (const s of services) {
-      void fetchMonth(s.id, y, m - 1).catch(() => {});
+      const list = byDuration.get(s.durationMinutes) ?? [];
+      list.push(s);
+      byDuration.set(s.durationMinutes, list);
     }
+    const run = () => {
+      for (const group of byDuration.values()) {
+        void fetchMonth(group[0].id, y, m - 1)
+          .then((data) => {
+            // Same duration → same open days. Fill the siblings' cache slots
+            // so switching service doesn't trigger another round trip.
+            for (const sibling of group.slice(1)) {
+              monthCache.set(monthKey(sibling.id, y, m - 1), data);
+            }
+          })
+          .catch(() => {});
+      }
+    };
+    const idle = window.requestIdleCallback;
+    if (idle) {
+      const handle = idle(run, { timeout: 1500 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const t = window.setTimeout(run, 300);
+    return () => window.clearTimeout(t);
   }, [services]);
 
   // Load slots whenever the selected day changes.

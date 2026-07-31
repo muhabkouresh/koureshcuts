@@ -56,7 +56,14 @@ function computeSlots(
 ): Slot[] {
   const duration = service.durationMinutes;
   const minStart = new Date(now.getTime() + siteConfig.minLeadMinutes * 60_000);
-  const windowEnd = new Date(now.getTime() + windowDays * 24 * 60 * 60_000);
+
+  // The booking window counts WHOLE DAYS, not an instant. Measuring it as
+  // `now + windowDays × 24 h` made the last day appear slot by slot over the
+  // course of the day: at 01:48 in the morning, a day 14 that opens 15:30–19:00
+  // showed nothing at all, then 15:30 popped up at 15:30, 16:00 at 16:00 …
+  // With a 14-day window the customer may book 14 days ahead, so that day is
+  // open from its first slot onward.
+  const lastBookableDate = addDaysToDateStr(dateKey(now, tz), windowDays);
 
   const dayStartUtc = zonedToUtc(dateStr, 0, tz);
   const dayEndUtc = zonedToUtc(dateStr, 24 * 60, tz);
@@ -71,6 +78,11 @@ function computeSlots(
   const special = specialDays.find(
     (s) => s.date >= dayStartUtc && s.date < dayEndUtc,
   );
+
+  // Beyond the window the whole day is closed — except on an extra day the
+  // owner opened explicitly, which ignores the window by design.
+  if (!special && dateStr > lastBookableDate) return [];
+
   const ranges: Array<[number, number]> = [];
   if (special && special.closeMinute > special.openMinute) {
     ranges.push([special.openMinute, special.closeMinute]);
@@ -81,9 +93,13 @@ function computeSlots(
   }
   if (ranges.length === 0) return [];
 
-  // Full-day time-off covering this date blocks everything (overrides extra days).
+  // Full-day time-off covering this date blocks everything (overrides extra
+  // days). `endDate` is EXCLUSIVE (midnight after the last closed day), so the
+  // comparison must be strict: with `>=`, a closure ending on the 13th also
+  // swallowed the 14th — every first day back after a day off was silently
+  // unbookable, including extra days the owner had opened by hand.
   const blocked = timeOffs.some(
-    (t) => t.startDate < dayEndUtc && t.endDate >= dayStartUtc,
+    (t) => t.startDate < dayEndUtc && t.endDate > dayStartUtc,
   );
   if (blocked) return [];
 
@@ -99,9 +115,6 @@ function computeSlots(
       const start = zonedToUtc(dateStr, minute, tz);
       const end = new Date(start.getTime() + duration * 60_000);
       if (start < minStart) continue;
-      // A date with an extra-day marker is bookable regardless of the normal
-      // booking window (the owner explicitly opened it).
-      if (!special && start > windowEnd) continue;
       const key = start.toISOString();
       if (seen.has(key)) continue; // overlapping ranges → dedupe by start
       if (appointments.some((a) => overlaps(start, end, a.startTime, a.endTime)))

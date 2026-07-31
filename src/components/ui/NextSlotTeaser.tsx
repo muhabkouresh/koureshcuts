@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatDateTimeLabel } from "@/lib/time";
+import { formatDateTimeLabel } from "@/lib/timeFormat";
 import { siteConfig } from "@/config/site";
 import QuickBook from "./QuickBook";
 
