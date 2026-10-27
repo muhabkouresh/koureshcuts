@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { privateUpsert } from "@/lib/prisma";
 import { verifyEmailToken } from "@/lib/token";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import type { NextRequest } from "next/server";
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   }
 
   const key = email.trim().toLowerCase();
-  await prisma.emailOptOut.upsert({
+  await privateUpsert("emailOptOut", {
     where: { email: key },
     update: {},
     create: { email: key },

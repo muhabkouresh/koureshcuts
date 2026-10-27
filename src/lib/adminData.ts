@@ -53,17 +53,15 @@ export async function getAdminData() {
       }),
       // No-show history per email — powers the risk badge on upcoming
       // appointments in the day plan.
-      prisma.appointment.groupBy({
-        by: ["customerEmail"],
+      prisma.appointment.findMany({
         where: { status: "NO_SHOW", customerEmail: { not: "" } },
-        _count: { _all: true },
+        select: { customerEmail: true },
       }),
       // Cancellation history per email — repeat cancellers cost slots that
       // often can't be refilled, so they get their own badge.
-      prisma.appointment.groupBy({
-        by: ["customerEmail"],
+      prisma.appointment.findMany({
         where: { status: "CANCELLED", customerEmail: { not: "" } },
-        _count: { _all: true },
+        select: { customerEmail: true },
       }),
       // Refused mails still waiting for a retry — powers the warning banner.
       prisma.emailFailure.count({
@@ -75,12 +73,12 @@ export async function getAdminData() {
   const noShowByEmail = new Map<string, number>();
   for (const g of noShowGroups) {
     const key = g.customerEmail.toLowerCase();
-    noShowByEmail.set(key, (noShowByEmail.get(key) ?? 0) + g._count._all);
+    noShowByEmail.set(key, (noShowByEmail.get(key) ?? 0) + 1);
   }
   const cancelByEmail = new Map<string, number>();
   for (const g of cancelGroups) {
     const key = g.customerEmail.toLowerCase();
-    cancelByEmail.set(key, (cancelByEmail.get(key) ?? 0) + g._count._all);
+    cancelByEmail.set(key, (cancelByEmail.get(key) ?? 0) + 1);
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";

@@ -155,7 +155,7 @@ function routeHarness() {
   const settings={bookingWindowDays:28,noShowBlockThreshold:2,maxActiveBookingsPerEmail:0,cancelDeadlineHours:0,ownerCopyEmails:true};
   const matches=(a,w={}) => (!w.status || !w.status.in || w.status.in.includes(a.status)) && (!w.startTime?.gte || a.startTime>=w.startTime.gte) && (!w.startTime?.lte || a.startTime<=w.startTime.lte) && (!w.startTime?.lt || a.startTime<w.startTime.lt) && (!w.endTime?.gt || a.endTime>w.endTime.gt) && (!w.id?.not || a.id!==w.id.not);
   const prisma={
-    service:{findUnique:async()=>service,findMany:async()=>[service]},blockedCustomer:{findUnique:async()=>null},reviewCustomer:{findUnique:async()=>null},
+    service:{findUnique:async()=>service,findMany:async()=>[service]},blockedCustomer:{findFirst:async()=>null},reviewCustomer:{findFirst:async()=>null},
     appointment:{findMany:async args=>records.filter(a=>matches(a,args?.where)).map(a=>({...a,service})),groupBy:async()=>[],count:async()=>0,findFirst:async({where})=>records.find(a=>matches(a,where))||null,create:async({data})=>{const a={...data,id:'appointment-'+(records.length+1)};records.push(a);return a},findUnique:async({where})=>{const a=records.find(a=>a.id===where.id);return a?{...a,service}:null},update:async({where,data})=>{const a=records.find(a=>a.id===where.id);Object.assign(a,data);return a}},
     businessHours:{findMany:async()=>Array.from({length:7},(_,dayOfWeek)=>({dayOfWeek,isClosed:false,openMinute:540,closeMinute:1140}))},timeOff:{findMany:async()=>[]},specialDay:{findMany:async()=>[]},waitlistEntry:{findMany:async()=>[],deleteMany:async()=>({count:0})},emailFailure:{count:async()=>0},
   };

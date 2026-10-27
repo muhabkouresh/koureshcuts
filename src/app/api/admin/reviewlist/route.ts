@@ -1,5 +1,5 @@
 import { isAuthenticated } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prisma, privateUpsert } from "@/lib/prisma";
 import { blockCustomerSchema } from "@/lib/validation";
 
 // Approval list (admin): emails on this list can still book online, but the
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     );
   }
   const email = parsed.data.email.toLowerCase();
-  await prisma.reviewCustomer.upsert({
+  await privateUpsert("reviewCustomer", {
     where: { email },
     update: { reason: parsed.data.reason ?? "" },
     create: { email, reason: parsed.data.reason ?? "" },

@@ -137,7 +137,7 @@ async function recordFailure(
       );
     }
   } catch (err) {
-    console.error("email failure logging failed", err);
+    console.error("email failure logging failed", err instanceof Error ? err.name : "error");
   }
 }
 
@@ -148,16 +148,12 @@ async function send({
   attachIcs,
 }: SendArgs): Promise<{ ok: boolean }> {
   if (!resend) {
-    console.log(
-      `\n[email:dev] An: ${to}\n[email:dev] Betreff: ${subject}` +
-        (attachIcs ? `\n[email:dev] (mit Kalender-Anhang appointment.ics)` : "") +
-        `\n[email:dev] (RESEND_API_KEY setzen, um wirklich zu senden)\n`,
-    );
+    console.log("[email:dev] Versand simuliert (ohne Empfänger-/Nachrichtenprotokoll)");
     // In dev (no API key) treat as delivered so the flow stays testable.
     return { ok: true };
   }
   try {
-    const { data, error } = await resend.emails.send({
+    const { error } = await resend.emails.send({
       from: FROM,
       to,
       subject,
@@ -167,14 +163,14 @@ async function send({
         : undefined,
     });
     if (error) {
-      console.error(`[resend] Versand an ${to} fehlgeschlagen:`, error);
+      console.error("[resend] Versand fehlgeschlagen");
       await recordFailure(to, subject, html, error);
       return { ok: false };
     }
-    console.log(`[resend] gesendet an ${to} (id ${data?.id})`);
+    console.log("[resend] E-Mail gesendet");
     return { ok: true };
   } catch (err) {
-    console.error(`[resend] Versand an ${to} fehlgeschlagen:`, err);
+    console.error("[resend] Versand fehlgeschlagen");
     await recordFailure(to, subject, html, err);
     return { ok: false };
   }
@@ -219,7 +215,7 @@ export async function retryFailedEmails(): Promise<{
       });
       retried++;
     } catch (err) {
-      console.error(`[resend] Neuversand an ${f.to} fehlgeschlagen:`, err);
+      console.error("[resend] Neuversand fehlgeschlagen", err instanceof Error ? err.name : "send error");
       await prisma.emailFailure
         .update({ where: { id: f.id }, data: { attempts: { increment: 1 } } })
         .catch(() => {});
@@ -695,7 +691,7 @@ export async function sendBroadcastEmails(
 
   if (!resend) {
     console.log(
-      `\n[email:dev] Rundmail "${subject}" an ${payloads.length} Empfänger (RESEND_API_KEY setzen, um wirklich zu senden)\n`,
+      `[email:dev] Rundmail simuliert: ${payloads.length} Empfänger`,
     );
     return { sent: payloads.length, failed: 0 };
   }
@@ -719,21 +715,21 @@ export async function sendBroadcastEmails(
           error: msg,
         })),
       })
-      .catch((err) => console.error("broadcast failure logging failed", err));
+      .catch((err) => console.error("broadcast failure logging failed", err instanceof Error ? err.name : "error"));
   }
   for (let i = 0; i < payloads.length; i += 100) {
     const chunk = payloads.slice(i, i + 100);
     try {
       const { error } = await resend.batch.send(chunk);
       if (error) {
-        console.error("[resend] Rundmail-Batch fehlgeschlagen:", error);
+        console.error("[resend] Rundmail-Batch fehlgeschlagen");
         await queueChunk(chunk, error);
         failed += chunk.length;
       } else {
         sent += chunk.length;
       }
     } catch (err) {
-      console.error("[resend] Rundmail-Batch fehlgeschlagen:", err);
+      console.error("[resend] Rundmail-Batch fehlgeschlagen", err instanceof Error ? err.name : "error");
       await queueChunk(chunk, err);
       failed += chunk.length;
     }

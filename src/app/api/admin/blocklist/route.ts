@@ -1,5 +1,5 @@
 import { isAuthenticated } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prisma, privateUpsert } from "@/lib/prisma";
 import { blockCustomerSchema } from "@/lib/validation";
 
 // Manual booking blocklist (admin). Emails are stored lowercase; the booking
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     );
   }
   const email = parsed.data.email.toLowerCase();
-  await prisma.blockedCustomer.upsert({
+  await privateUpsert("blockedCustomer", {
     where: { email },
     update: { reason: parsed.data.reason ?? "" },
     create: { email, reason: parsed.data.reason ?? "" },

@@ -48,8 +48,8 @@ export async function POST(request: NextRequest) {
 
   const [service, manuallyBlocked, review, settings, followUpDays] = await Promise.all([
     prisma.service.findUnique({ where: { id: input.serviceId } }),
-    prisma.blockedCustomer.findUnique({ where: { email: input.customerEmail.toLowerCase() }, select: { id: true } }),
-    prisma.reviewCustomer.findUnique({ where: { email: input.customerEmail.toLowerCase() }, select: { id: true } }),
+    prisma.blockedCustomer.findFirst({ where: { email: input.customerEmail.toLowerCase() }, select: { id: true } }),
+    prisma.reviewCustomer.findFirst({ where: { email: input.customerEmail.toLowerCase() }, select: { id: true } }),
     getSettings(),
     followUpGapDays(input.customerEmail),
   ]);

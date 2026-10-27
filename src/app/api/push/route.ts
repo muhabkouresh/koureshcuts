@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, privateUpsert } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
 import { vapidPublicKey, pushConfigured } from "@/lib/push";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   // reminder pushes (matched purely by email) still arrive.
   const notifiedAt = reminderOnly ? new Date() : null;
 
-  await prisma.customerPush.upsert({
+  await privateUpsert("customerPush", {
     where: { endpoint: subscription.endpoint },
     update: {
       p256dh: subscription.keys.p256dh,
@@ -105,7 +105,7 @@ export async function DELETE(request: NextRequest) {
     return Response.json({ error: "Ungültige Eingabe." }, { status: 400 });
   }
   await prisma.customerPush
-    .delete({ where: { endpoint: parsed.data.endpoint } })
+    .deleteMany({ where: { endpoint: parsed.data.endpoint } })
     .catch(() => {});
   return Response.json({ ok: true });
 }

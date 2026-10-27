@@ -21,7 +21,7 @@ if (publicKey && privateKey) {
     );
     configured = true;
   } catch (err) {
-    console.error("invalid VAPID configuration — push disabled", err);
+    console.error("invalid VAPID configuration — push disabled", (err as {statusCode?: number}).statusCode ?? "push error");
   }
 }
 
@@ -73,13 +73,13 @@ export async function sendCustomerPushForDay(
               .delete({ where: { id: s.id } })
               .catch(() => {});
           } else {
-            console.error("customer push failed", err);
+            console.error("customer push failed", (err as {statusCode?: number}).statusCode ?? "push error");
           }
         }
       }),
     );
   } catch (err) {
-    console.error("customer push failed", err);
+    console.error("customer push failed", (err as {statusCode?: number}).statusCode ?? "push error");
   }
 }
 
@@ -117,13 +117,13 @@ export async function sendCustomerReminderPush(
               .delete({ where: { id: s.id } })
               .catch(() => {});
           } else {
-            console.error("customer reminder push failed", err);
+            console.error("customer reminder push failed", (err as {statusCode?: number}).statusCode ?? "push error");
           }
         }
       }),
     );
   } catch (err) {
-    console.error("customer reminder push failed", err);
+    console.error("customer reminder push failed", (err as {statusCode?: number}).statusCode ?? "push error");
   }
 }
 
@@ -144,15 +144,15 @@ export async function sendAdminPush(title: string, body: string): Promise<void> 
           // 404/410 = subscription expired or revoked — clean it up.
           if (status === 404 || status === 410) {
             await prisma.pushSubscription
-              .delete({ where: { endpoint: s.endpoint } })
+              .deleteMany({ where: { endpoint: s.endpoint } })
               .catch(() => {});
           } else {
-            console.error("admin push failed", err);
+            console.error("admin push failed", (err as {statusCode?: number}).statusCode ?? "push error");
           }
         }
       }),
     );
   } catch (err) {
-    console.error("admin push failed", err);
+    console.error("admin push failed", (err as {statusCode?: number}).statusCode ?? "push error");
   }
 }

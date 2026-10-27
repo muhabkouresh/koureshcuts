@@ -19,7 +19,6 @@ async function collectRecipients(): Promise<string[]> {
   const [rows, optOuts] = await Promise.all([
     prisma.appointment.findMany({
       where: { customerEmail: { not: "" } },
-      distinct: ["customerEmail"],
       select: { customerEmail: true },
     }),
     prisma.emailOptOut.findMany({ select: { email: true } }),

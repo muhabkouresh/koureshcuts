@@ -50,3 +50,7 @@ devserver.log
 next-env.d.ts
 
 .vercel
+
+# Encrypted customer backups / Windows-protected recovery keys
+*.kcbackup
+*.dpapi

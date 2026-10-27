@@ -1,5 +1,5 @@
 import { isAuthenticated } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prisma, privateUpsert } from "@/lib/prisma";
 import { vapidPublicKey, pushConfigured } from "@/lib/push";
 import { z } from "zod";
 
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   }
   const { endpoint, keys } = parsed.data;
 
-  await prisma.pushSubscription.upsert({
+  await privateUpsert("pushSubscription", {
     where: { endpoint },
     update: { p256dh: keys.p256dh, auth: keys.auth },
     create: { endpoint, p256dh: keys.p256dh, auth: keys.auth },
@@ -73,7 +73,7 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "endpoint erforderlich." }, { status: 400 });
   }
   await prisma.pushSubscription
-    .delete({ where: { endpoint } })
+    .deleteMany({ where: { endpoint } })
     .catch(() => {});
   return Response.json({ ok: true });
 }

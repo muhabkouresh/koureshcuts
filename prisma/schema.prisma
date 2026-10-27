@@ -85,6 +85,9 @@ model TimeOff {
   reason    String   @default("")
   emergency Boolean  @default(false)
   createdAt DateTime @default(now())
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+
 }
 
 /// An extra working day on a single date that the weekly template would
@@ -101,6 +104,9 @@ model SpecialDay {
   createdAt   DateTime @default(now())
 
   @@index([date])
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+
 }
 
 /// A customer appointment. PENDING/CONFIRMED occupy the slot; CANCELLED frees it.
@@ -120,6 +126,12 @@ model Appointment {
 
   @@index([startTime])
   @@index([status])
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  customerEmailHash String?
+
+  @@index([customerEmailHash])
+
 }
 
 /// Delay minutes assigned to a customer ("Minutenkonto"): every time a
@@ -138,6 +150,12 @@ model DelayLog {
 
   @@index([date])
   @@index([customerEmail])
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  customerEmailHash String?
+
+  @@index([customerEmailHash])
+
 }
 
 /// A manually blocked customer email (admin decision): no online booking.
@@ -147,6 +165,10 @@ model BlockedCustomer {
   email     String   @unique
   reason    String   @default("")
   createdAt DateTime @default(now())
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  emailHash String? @unique
+
 }
 
 /// Customers who unsubscribed from broadcast/news emails (lowercase). Only
@@ -155,6 +177,10 @@ model EmailOptOut {
   id        String   @id @default(cuid())
   email     String   @unique
   createdAt DateTime @default(now())
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  emailHash String? @unique
+
 }
 
 /// Customers (lowercase email) whose online bookings need manual approval:
@@ -165,6 +191,10 @@ model ReviewCustomer {
   email     String   @unique
   reason    String   @default("")
   createdAt DateTime @default(now())
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  emailHash String? @unique
+
 }
 
 /// Tracks the win-back email per customer (lowercase) so each booking lapse
@@ -173,6 +203,10 @@ model WinbackLog {
   id     String   @id @default(cuid())
   email  String   @unique
   sentAt DateTime
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  emailHash String? @unique
+
 }
 
 /// One tracked page view for the admin Statistik tab. Privacy-light: no IP or
@@ -220,6 +254,9 @@ model ProductSale {
   createdAt  DateTime @default(now())
 
   @@index([date])
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+
 }
 
 /// An email that Resend refused to send (e.g. the free-plan daily limit).
@@ -237,6 +274,9 @@ model EmailFailure {
   createdAt DateTime  @default(now())
 
   @@index([sentAt])
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+
 }
 
 /// A Web-Push subscription of the admin PWA (owner's phone/browser). Every
@@ -247,6 +287,10 @@ model PushSubscription {
   p256dh    String
   auth      String
   createdAt DateTime @default(now())
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  endpointHash String? @unique
+
 }
 
 /// A customer device watching for freed slots ("Termin-Radar"). `date` set =
@@ -266,6 +310,13 @@ model CustomerPush {
 
   @@index([date])
   @@index([email])
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  emailHash String?
+
+  @@index([emailHash])
+  endpointHash String? @unique
+
 }
 
 /// A customer waiting for a spot. `date` set = waiting for that specific day
@@ -285,4 +336,10 @@ model WaitlistEntry {
   createdAt     DateTime  @default(now())
 
   @@index([date])
+  /// 0 = legacy data; 1 = authenticated encrypted private fields.
+  privacyVersion Int @default(0)
+  customerEmailHash String?
+
+  @@index([customerEmailHash])
+
 }

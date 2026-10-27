@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { prisma, privateUpsert } from "./prisma";
 import { ACTIVE_STATUSES, AppointmentStatus } from "./constants";
 import { sendWinbackEmail } from "./email";
 
@@ -76,7 +76,7 @@ export async function runWinback(winbackWeeks: number): Promise<number> {
     try {
       const res = await sendWinbackEmail(v.name, v.email);
       if (res.ok) {
-        await prisma.winbackLog.upsert({
+        await privateUpsert("winbackLog", {
           where: { email: key },
           update: { sentAt: new Date() },
           create: { email: key, sentAt: new Date() },
@@ -84,7 +84,7 @@ export async function runWinback(winbackWeeks: number): Promise<number> {
         sent += 1;
       }
     } catch (err) {
-      console.error(`winback mail failed for ${key}`, err);
+      console.error("winback mail failed", err instanceof Error ? err.name : "send error");
     }
   }
   return sent;
