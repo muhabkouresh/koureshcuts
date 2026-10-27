@@ -1,3 +1,4 @@
+import { afterResponse } from "@/lib/afterResponse";
 import type { NextRequest } from "next/server";
 import { formatInTimeZone } from "date-fns-tz";
 import { Prisma } from "@prisma/client";
@@ -14,6 +15,8 @@ import { notifyWaitlistForDay } from "@/lib/waitlist";
 import { sendAdminPush } from "@/lib/push";
 import { dateKey, formatDateTimeLabel } from "@/lib/time";
 import { getSettings } from "@/lib/settings";
+
+export const maxDuration = 60;
 
 // POST /api/appointments/[id]/reschedule?t=<token>
 // Public, token-guarded self-service reschedule: moves an active, upcoming
@@ -168,42 +171,18 @@ export async function POST(
     );
   }
 
-  // Notifications are best-effort — the reschedule itself already succeeded.
-  try {
-    await sendRescheduleEmails(
-      {
-        id: appt.id,
-        customerName: appt.customerName,
-        customerEmail: appt.customerEmail,
-        serviceName: appt.service.name,
-        priceCents: appt.service.priceCents,
-        start,
-        end,
-      },
-      oldStart,
-    );
-  } catch (err) {
-    console.error("reschedule email failed", err);
-  }
-
-  // The old day gained a free slot — tell anyone waiting for it.
   const tz = siteConfig.timezone;
-  if (dateKey(oldStart, tz) !== dateKey(start, tz)) {
-    try {
-      await notifyWaitlistForDay(oldStart);
-    } catch (err) {
-      console.error("waitlist auto-notify failed", err);
-    }
-  }
-
-  try {
-    await sendAdminPush(
-      "Termin verschoben",
-      `${appt.customerName} — ${appt.service.name}: ${formatDateTimeLabel(oldStart, tz)} → ${formatDateTimeLabel(start, tz)}`,
-    );
-  } catch (err) {
-    console.error("reschedule push failed", err);
-  }
+  afterResponse({
+    "reschedule email failed": () => sendRescheduleEmails({
+      id: appt.id, customerName: appt.customerName, customerEmail: appt.customerEmail,
+      serviceName: appt.service.name, priceCents: appt.service.priceCents, start, end,
+    }, oldStart),
+    "waitlist auto-notify failed": async () => {
+      if (dateKey(oldStart, tz) !== dateKey(start, tz)) await notifyWaitlistForDay(oldStart);
+    },
+    "reschedule push failed": () => sendAdminPush("Termin verschoben",
+      `${appt.customerName} — ${appt.service.name}: ${formatDateTimeLabel(oldStart, tz)} → ${formatDateTimeLabel(start, tz)}`),
+  });
 
   const gcalUrl = googleCalendarUrl({
     title: `${appt.service.name} — ${siteConfig.name}`,

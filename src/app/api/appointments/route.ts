@@ -1,3 +1,4 @@
+import { afterResponse } from "@/lib/afterResponse";
 import type { NextRequest } from "next/server";
 import { formatInTimeZone } from "date-fns-tz";
 import { Prisma } from "@prisma/client";
@@ -17,6 +18,8 @@ import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { sendAdminPush } from "@/lib/push";
 import { followUpGapDays } from "@/lib/rhythm";
 import { formatDateTimeLabel, weekdayOf, zonedToUtc } from "@/lib/time";
+
+export const maxDuration = 60;
 
 // POST /api/appointments — create a guest booking.
 export async function POST(request: NextRequest) {
@@ -43,18 +46,18 @@ export async function POST(request: NextRequest) {
   }
   const input = parsed.data;
 
-  const service = await prisma.service.findUnique({
-    where: { id: input.serviceId },
-  });
+  const [service, manuallyBlocked, review, settings, followUpDays] = await Promise.all([
+    prisma.service.findUnique({ where: { id: input.serviceId } }),
+    prisma.blockedCustomer.findUnique({ where: { email: input.customerEmail.toLowerCase() }, select: { id: true } }),
+    prisma.reviewCustomer.findUnique({ where: { email: input.customerEmail.toLowerCase() }, select: { id: true } }),
+    getSettings(),
+    followUpGapDays(input.customerEmail),
+  ]);
   if (!service || !service.active) {
     return Response.json({ error: "Service nicht gefunden." }, { status: 400 });
   }
 
   // Manually blocked by the shop owner (admin blocklist).
-  const manuallyBlocked = await prisma.blockedCustomer.findUnique({
-    where: { email: input.customerEmail.toLowerCase() },
-    select: { id: true },
-  });
   if (manuallyBlocked) {
     return Response.json(
       {
@@ -67,14 +70,7 @@ export async function POST(request: NextRequest) {
 
   // Approval list: booking goes through, but PENDING until the owner
   // confirms it manually (softer than the full block).
-  const needsApproval = Boolean(
-    await prisma.reviewCustomer.findUnique({
-      where: { email: input.customerEmail.toLowerCase() },
-      select: { id: true },
-    }),
-  );
-
-  const settings = await getSettings();
+  const needsApproval = Boolean(review);
 
   // Repeated no-shows lose the online-booking privilege (walk-in/call only).
   // The threshold is an admin setting; 0 disables the automatic block.
@@ -210,10 +206,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Self-cleaning waitlist: this booking fulfils any waitlist wish of the
-  // same customer that matches the booked day (exact day, matching weekday,
-  // or "any day") — those entries leave the list automatically.
-  try {
+  const emailData = {
+    id: appointmentId, customerName: input.customerName, customerEmail: input.customerEmail,
+    serviceName: service.name, priceCents: service.priceCents, start, end,
+  };
+  afterResponse({
+    "confirmation email failed": () => needsApproval ? sendBookingRequestEmail(emailData) : sendConfirmationEmails(emailData),
+    "booking push failed": () => sendAdminPush(
+      needsApproval ? "Termin wartet auf deine Freigabe" : "Neue Buchung",
+      `${input.customerName} — ${service.name}, ${formatDateTimeLabel(start, siteConfig.timezone)}`,
+    ),
+    "waitlist cleanup failed": async () => {
+      try {
     const dayStart = zonedToUtc(dateStr, 0, siteConfig.timezone);
     const dayEnd = zonedToUtc(dateStr, 24 * 60, siteConfig.timezone);
     const bookedWeekday = String(weekdayOf(dateStr));
@@ -238,36 +242,8 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("waitlist self-clean failed", err);
   }
-
-  // Send confirmation emails; never fail the booking if email delivery hiccups.
-  const emailData = {
-    id: appointmentId,
-    customerName: input.customerName,
-    customerEmail: input.customerEmail,
-    serviceName: service.name,
-    priceCents: service.priceCents,
-    start,
-    end,
-  };
-  try {
-    if (needsApproval) {
-      await sendBookingRequestEmail(emailData);
-    } else {
-      await sendConfirmationEmails(emailData);
-    }
-  } catch (err) {
-    console.error("confirmation email failed", err);
-  }
-
-  // Push to the admin PWA (best-effort).
-  try {
-    await sendAdminPush(
-      needsApproval ? "Termin wartet auf deine Freigabe" : "Neue Buchung",
-      `${input.customerName} — ${service.name}, ${formatDateTimeLabel(start, siteConfig.timezone)}`,
-    );
-  } catch (err) {
-    console.error("booking push failed", err);
-  }
+    },
+  });
 
   const gcalUrl = googleCalendarUrl({
     title: `${service.name} — ${siteConfig.name}`,
@@ -278,7 +254,6 @@ export async function POST(request: NextRequest) {
   });
 
   // Personal visit rhythm for the follow-up offer on the success screen.
-  const followUpDays = await followUpGapDays(input.customerEmail);
 
   return Response.json(
     {

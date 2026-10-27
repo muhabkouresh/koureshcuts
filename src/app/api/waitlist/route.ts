@@ -1,3 +1,4 @@
+import { afterResponse } from "@/lib/afterResponse";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { siteConfig } from "@/config/site";
@@ -6,6 +7,8 @@ import { sendWaitlistJoinedEmails } from "@/lib/email";
 import { todayInTz, zonedToUtc } from "@/lib/time";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { getSettings } from "@/lib/settings";
+
+export const maxDuration = 60;
 
 // POST /api/waitlist — join the waitlist: either for one fully-booked day
 // (date set) or flexibly for the next free slot (optionally limited to
@@ -109,16 +112,11 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  try {
-    await sendWaitlistJoinedEmails({
-      customerName: input.customerName,
-      customerEmail: input.customerEmail,
-      serviceName: service.name,
-      date,
-    });
-  } catch (err) {
-    console.error("waitlist email failed", err);
-  }
+  afterResponse({
+    "waitlist email failed": () => sendWaitlistJoinedEmails({
+      customerName: input.customerName, customerEmail: input.customerEmail, serviceName: service.name, date,
+    }),
+  });
 
   return Response.json({ ok: true, position }, { status: 201 });
 }

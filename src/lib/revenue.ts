@@ -44,18 +44,31 @@ function mondayOf(ds: string): string {
 }
 
 export async function getRevenueStats(): Promise<RevenueStats> {
-  const rows = await prisma.appointment.findMany({
+  const [rows, manualRows, noShowRows, upcomingRows] = await Promise.all([
+    prisma.appointment.findMany({
     where: {
       status: { notIn: ["CANCELLED", "NO_SHOW", "BLOCKED"] },
       startTime: { lt: new Date() },
     },
     select: { startTime: true, service: { select: { priceCents: true } } },
-  });
+    }),
 
   // Product sales and tips are logged manually and count toward every bucket.
-  const manualRows = await prisma.productSale.findMany({
+    prisma.productSale.findMany({
     select: { date: true, amountCents: true, kind: true },
-  });
+    }),
+    prisma.appointment.findMany({
+    where: { status: "NO_SHOW" },
+    select: { service: { select: { priceCents: true } } },
+    }),
+    prisma.appointment.findMany({
+    where: {
+      status: { in: ["CONFIRMED", "PENDING"] },
+      startTime: { gte: new Date() },
+    },
+    select: { startTime: true, service: { select: { priceCents: true } } },
+    }),
+  ]);
   const productRows = manualRows.filter((r) => r.kind !== "tip");
   const tipRows = manualRows.filter((r) => r.kind === "tip");
 
@@ -66,22 +79,12 @@ export async function getRevenueStats(): Promise<RevenueStats> {
   const tipTotalCents = tipRows.reduce((s, r) => s + r.amountCents, 0);
 
   // No-shows are counted separately (lost revenue), not part of the buckets.
-  const noShowRows = await prisma.appointment.findMany({
-    where: { status: "NO_SHOW" },
-    select: { service: { select: { priceCents: true } } },
-  });
   const noShowCount = noShowRows.length;
   const noShowCents = noShowRows.reduce((s, r) => s + r.service.priceCents, 0);
 
   // Expected revenue: everything booked and still ahead (incl. pending
   // approval — the slot is held either way).
-  const upcomingRows = await prisma.appointment.findMany({
-    where: {
-      status: { in: ["CONFIRMED", "PENDING"] },
-      startTime: { gte: new Date() },
-    },
-    select: { startTime: true, service: { select: { priceCents: true } } },
-  });
+
   const expectedCount = upcomingRows.length;
   const expectedCents = upcomingRows.reduce(
     (s, r) => s + r.service.priceCents,

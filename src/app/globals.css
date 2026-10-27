@@ -263,3 +263,7 @@ body {
     transition: none !important;
   }
 }
+
+/* Fast feedback for booking steps; decorative page animations remain separate. */
+.animate-step-in { animation: fade-in 0.18s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .animate-step-in { animation: none; } }

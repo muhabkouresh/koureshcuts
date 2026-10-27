@@ -8,6 +8,8 @@ import { googleCalUrl } from "@/lib/gcal";
 import { SLOT_INTERVAL_MINUTES } from "@/lib/constants";
 import type { RevenueStats } from "@/lib/revenue";
 import DatePicker from "./DatePicker";
+import type { AdminData } from "@/lib/adminData";
+import { useLiveResource } from "@/hooks/useLiveResource";
 import {
   addDaysToDateStr,
   dateKey,
@@ -82,26 +84,13 @@ type WaitlistItem = {
   notifiedAt: string | null;
 };
 
-type Data = {
-  feedUrl: string;
-  bookingWindowDays: number;
-  reminderEnabled: boolean;
-  reminderLeadHours: number;
-  cancelDeadlineHours: number;
-  maxActiveBookingsPerEmail: number;
-  noShowBlockThreshold: number;
-  winbackWeeks: number;
-  ownerCopyEmails: boolean;
-  waitlistMaxPerDay: number;
-  emailFailures: number;
-  revenue: RevenueStats;
-  services: Service[];
-  appointments: Appointment[];
-  hours: DayHours[];
-  timeOff: TimeOff[];
-  specialDays: SpecialDay[];
-  waitlist: WaitlistItem[];
-};
+type Data = AdminData;
+
+function validAdminData(value: Data): boolean {
+  return typeof value?.syncedAt === "string" && Number.isFinite(Date.parse(value.syncedAt)) &&
+    Array.isArray(value.appointments) && Array.isArray(value.services) && Array.isArray(value.hours) &&
+    Array.isArray(value.timeOff) && Array.isArray(value.specialDays) && Array.isArray(value.waitlist);
+}
 
 const tz = siteConfig.timezone;
 const WEEKDAYS_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -152,13 +141,17 @@ function statusStyle(status: string): string {
 }
 
 export default function AdminDashboard({
-  data,
+  data: initialData,
   siteName,
 }: {
   data: Data;
   siteName: string;
 }) {
   const router = useRouter();
+  const sync = useLiveResource<Data>("/api/admin/snapshot", { initialData, initialUpdatedAt: initialData.syncedAt, intervalMs: 20_000, validate: validAdminData });
+  const data = sync.data ?? initialData;
+  const { offline, refresh } = sync;
+  useEffect(() => { if (sync.unauthorized) router.replace("/admin/login"); }, [sync.unauthorized, router]);
   const [tab, setTab] = useState<
     | "termine"
     | "kunden"
@@ -175,60 +168,19 @@ export default function AdminDashboard({
     date?: string;
     customerQuery?: string;
   }>({ n: 0 });
-  // Offline indicator — the SW serves the last cached copy of this page, so
-  // the plan stays readable; actions need the network again.
-  const [offline, setOffline] = useState(false);
-
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- client-only navigator state */
-    setOffline(!navigator.onLine);
-    /* eslint-enable react-hooks/set-state-in-effect */
-    const on = () => setOffline(false);
-    const off = () => setOffline(true);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    return () => {
-      window.removeEventListener("online", on);
-      window.removeEventListener("offline", off);
-    };
-  }, []);
-
-  // Live sync: new bookings/cancellations appear without a manual reload.
-  // Three triggers — the booking push (relayed by the service worker as a
-  // "kc:refresh" message, near-instant), returning to the foreground, and a
-  // 30s heartbeat while the tab is visible and online.
-  useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === "visible" && navigator.onLine) {
-        router.refresh();
-      }
-    };
-    const id = window.setInterval(refresh, 30_000);
-    const onMsg = (e: MessageEvent) => {
-      if ((e.data as { type?: string } | null)?.type === "kc:refresh") {
-        refresh();
-      }
-    };
-    document.addEventListener("visibilitychange", refresh);
-    window.addEventListener("focus", refresh);
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.addEventListener("message", onMsg);
-    }
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", refresh);
-      window.removeEventListener("focus", refresh);
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.removeEventListener("message", onMsg);
-      }
-    };
-  }, [router]);
-
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
+    if ("caches" in window) {
+      await Promise.all((await caches.keys()).filter(key => key.startsWith("koureshcuts-")).map(async key => {
+        const cache = await caches.open(key);
+        await Promise.all((await cache.keys()).filter(request => /\/(admin|meine-termine|termin)(\/|$)/.test(new URL(request.url).pathname)).map(request => cache.delete(request)));
+      })).catch(() => {});
+    }
     router.replace("/admin/login");
     router.refresh();
   }
+
+  if (sync.unauthorized) return <main className="mx-auto max-w-3xl px-5 py-10"><p role="alert">Deine Sitzung ist abgelaufen. Bitte erneut anmelden.</p><a href="/admin/login" className="underline">Zur Anmeldung</a></main>;
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 animate-fade-in px-5 py-10">
@@ -243,15 +195,10 @@ export default function AdminDashboard({
           {siteName} <span className="text-brand">· Admin</span>
         </h1>
         <div className="flex items-center gap-4">
-          {!offline && (
-            <span
-              className="flex items-center gap-1.5 text-xs font-medium text-muted"
-              title="Neue Buchungen erscheinen automatisch — kein Neuladen nötig"
-            >
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-              Live
-            </span>
-          )}
+          <button type="button" onClick={() => refresh()} disabled={sync.loading || offline}
+            className="rounded-full border border-line px-3 py-1.5 text-xs font-medium disabled:opacity-50">
+            {sync.loading ? "Aktualisiert…" : "Aktualisieren"}
+          </button>
           <button
             onClick={logout}
             className="text-sm text-muted underline underline-offset-4 transition-colors hover:text-foreground"
@@ -261,17 +208,19 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {offline && (
-        <p className="mt-4 rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 ring-1 ring-amber-200">
-          📴 Offline — du siehst den zuletzt geladenen Stand. Änderungen sind
-          erst wieder mit Internet möglich.
+      <div className="mt-3 text-xs text-muted" role="status" aria-live="polite">
+        {sync.updatedAt ? <>Terminplan aktualisiert: {new Date(sync.updatedAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: tz })} Uhr</> : "Terminstand wird geprüft…"}
+      </div>
+      {(offline || sync.error) && (
+        <p role="alert" className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 ring-1 ring-amber-200">
+          {offline ? "Offline – du siehst den zuletzt geladenen Stand. Sobald die Verbindung zurück ist, wird neu geladen." : sync.error}
         </p>
       )}
 
       {data.emailFailures > 0 && (
         <MailFailureBanner
           count={data.emailFailures}
-          onDone={() => router.refresh()}
+          onDone={() => refresh()}
         />
       )}
 
@@ -325,7 +274,7 @@ export default function AdminDashboard({
           waitlist={data.waitlist}
           feedUrl={data.feedUrl}
           siteName={siteName}
-          onChange={() => router.refresh()}
+          onChange={() => refresh()}
         />
       )}
       {tab === "kunden" && (
@@ -335,14 +284,14 @@ export default function AdminDashboard({
           services={data.services}
           noShowThreshold={data.noShowBlockThreshold}
           winbackWeeks={data.winbackWeeks}
-          onChange={() => router.refresh()}
+          onChange={() => refresh()}
         />
       )}
       {tab === "umsatz" && (
-        <UmsatzTab revenue={data.revenue} onChange={() => router.refresh()} />
+        <RevenuePanel onChange={() => refresh()} />
       )}
       {tab === "statistik" && <StatistikTab />}
-      {tab === "services" && <ServicesTab onChange={() => router.refresh()} />}
+      {tab === "services" && <ServicesTab onChange={() => refresh()} />}
       {tab === "verfuegbarkeit" && (
         <Availability
           hours={data.hours}
@@ -356,12 +305,18 @@ export default function AdminDashboard({
           noShowBlockThreshold={data.noShowBlockThreshold}
           ownerCopyEmails={data.ownerCopyEmails}
           waitlistMaxPerDay={data.waitlistMaxPerDay}
-          onChange={() => router.refresh()}
+          onChange={() => refresh()}
         />
       )}
       {tab === "verspaetungen" && <VerspaetungenTab />}
     </main>
   );
+}
+
+function RevenuePanel({ onChange }: { onChange: () => void }) {
+  const revenue = useLiveResource<RevenueStats>("/api/admin/revenue", { intervalMs: 60_000 });
+  if (!revenue.data) return <div className="mt-6" role="status">{revenue.error || "Umsatz wird geladen…"}{revenue.error && <button className="ml-3 underline" onClick={() => revenue.refresh()}>Erneut versuchen</button>}</div>;
+  return <>{revenue.error && <p role="alert" className="mt-4 text-sm text-amber-800">{revenue.error}</p>}<UmsatzTab revenue={revenue.data} onChange={() => { onChange(); revenue.refresh(); }} /></>;
 }
 
 /* ---------------------------- Mail failure banner --------------------------- */
@@ -616,8 +571,17 @@ function TermineTab({
   siteName: string;
   onChange: () => void;
 }) {
-  const today = useMemo(() => todayInTz(tz), []);
+  const today = todayInTz(tz);
   const [selected, setSelected] = useState<string>(initialDate ?? today);
+  const previousToday = useRef(today);
+  useEffect(() => {
+    if (previousToday.current !== today) {
+      const previous = previousToday.current;
+      previousToday.current = today;
+      // A resumed "today" view follows midnight; explicitly selected other days stay selected.
+      setSelected(current => current === previous ? today : current);
+    }
+  }, [today]);
   const [showForm, setShowForm] = useState(false);
   // When "Besetzen" is chosen for a specific free slot, prefill the form's time.
   const [formTime, setFormTime] = useState<string | undefined>(undefined);

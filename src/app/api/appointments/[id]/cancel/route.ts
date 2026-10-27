@@ -1,3 +1,4 @@
+import { afterResponse } from "@/lib/afterResponse";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { AppointmentStatus } from "@/lib/constants";
@@ -8,6 +9,8 @@ import { sendAdminPush } from "@/lib/push";
 import { siteConfig } from "@/config/site";
 import { formatDateTimeLabel } from "@/lib/time";
 import { getSettings } from "@/lib/settings";
+
+export const maxDuration = 60;
 
 // POST /api/appointments/[id]/cancel?t=<token>
 // Public, token-guarded self-cancellation for customers.
@@ -87,40 +90,16 @@ export async function POST(
     data: { status: AppointmentStatus.CANCELLED, notes: newNotes },
   });
 
-  // Let the owner know the slot freed up (never fail the cancel on email error).
-  try {
-    await sendCancellationNotice(
-      {
-        id: appt.id,
-        customerName: appt.customerName,
-        customerEmail: appt.customerEmail,
-        serviceName: appt.service.name,
-        priceCents: appt.service.priceCents,
-        start: appt.startTime,
-        end: appt.endTime,
-      },
-      reason,
-    );
-  } catch (err) {
-    console.error("cancellation notice failed", err);
-  }
-
-  // A spot opened up — tell everyone waiting for this day.
-  try {
-    await notifyWaitlistForDay(appt.startTime);
-  } catch (err) {
-    console.error("waitlist auto-notify failed", err);
-  }
-
-  // Push to the admin PWA (best-effort).
-  try {
-    await sendAdminPush(
-      "Termin storniert",
-      `${appt.customerName} — ${appt.service.name}, ${formatDateTimeLabel(appt.startTime, siteConfig.timezone)}`,
-    );
-  } catch (err) {
-    console.error("cancel push failed", err);
-  }
+  afterResponse({
+    "cancellation notice failed": () => sendCancellationNotice({
+      id: appt.id, customerName: appt.customerName, customerEmail: appt.customerEmail,
+      serviceName: appt.service.name, priceCents: appt.service.priceCents,
+      start: appt.startTime, end: appt.endTime,
+    }, reason),
+    "waitlist auto-notify failed": () => notifyWaitlistForDay(appt.startTime),
+    "cancel push failed": () => sendAdminPush("Termin storniert",
+      `${appt.customerName} — ${appt.service.name}, ${formatDateTimeLabel(appt.startTime, siteConfig.timezone)}`),
+  });
 
   return Response.json({ ok: true });
 }

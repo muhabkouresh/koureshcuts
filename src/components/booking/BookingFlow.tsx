@@ -17,6 +17,9 @@ import {
   longDateFromStr,
 } from "@/lib/timeFormat";
 import PushOptIn from "@/components/ui/PushOptIn";
+import { fetchJson } from "@/lib/fetchJson";
+import { validDaySlots, type DaySlots } from "@/lib/availabilityClient";
+import { useLiveResource } from "@/hooks/useLiveResource";
 
 export type Service = {
   id: string;
@@ -81,28 +84,42 @@ const monthCache = new Map<string, MonthData>();
 const monthKey = (serviceId: string, year: number, month0: number) =>
   `${serviceId}:${year}:${month0}`;
 
-async function fetchMonth(
-  serviceId: string,
-  year: number,
-  month0: number,
-): Promise<MonthData> {
-  const res = await fetch(
-    `/api/availability/month?serviceId=${serviceId}&year=${year}&month=${month0}`,
-    { cache: "no-store" },
-  );
-  const d = await res.json();
-  const data: MonthData = { days: d.days ?? [], full: d.full ?? [] };
-  monthCache.set(monthKey(serviceId, year, month0), data);
-  return data;
+const monthRequests = new Map<string, Promise<MonthData>>();
+async function fetchMonth(serviceId: string, year: number, month0: number): Promise<MonthData> {
+  const key = monthKey(serviceId, year, month0);
+  const existing = monthRequests.get(key);
+  if (existing) return existing;
+  const promise = fetchJson<MonthData>(`/api/availability/month?serviceId=${encodeURIComponent(serviceId)}&year=${year}&month=${month0}`)
+    .then(data => {
+      const validDays = (days: unknown): days is number[] => Array.isArray(days) && days.every(day => Number.isInteger(day) && day >= 1 && day <= daysInMonth(year, month0));
+      if (!validDays(data.days) || !validDays(data.full)) throw new Error("Kalender konnte nicht geladen werden.");
+      monthCache.set(key, data);
+      if (monthCache.size > 24) monthCache.delete(monthCache.keys().next().value!);
+      return data;
+    }).finally(() => { monthRequests.delete(key); });
+  monthRequests.set(key, promise);
+  return promise;
 }
 
 export default function BookingFlow({ services }: { services: Service[] }) {
   const [step, setStep] = useState<Step>("service");
   const [service, setService] = useState<Service | null>(null);
   const [date, setDate] = useState<string | null>(null);
-  const [slots, setSlots] = useState<Slot[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
   const [slot, setSlot] = useState<Slot | null>(null);
+  const availabilityUrl = service && date ? `/api/availability?serviceId=${encodeURIComponent(service.id)}&date=${date}` : null;
+  const day = useLiveResource<DaySlots>(availabilityUrl, { intervalMs: 45_000, active: step === "datetime", validate: validDaySlots });
+  const slots = day.data?.slots ?? [];
+  const loadingSlots = !day.data && !day.error;
+  const stepRootRef = useRef<HTMLDivElement | null>(null);
+  const previousStepRef = useRef(step);
+  useEffect(() => {
+    if (previousStepRef.current !== step) {
+      previousStepRef.current = step;
+      const root = stepRootRef.current;
+      root?.scrollIntoView({ behavior: "instant", block: "start" });
+      root?.focus({ preventScroll: true });
+    }
+  }, [step]);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -189,87 +206,26 @@ export default function BookingFlow({ services }: { services: Service[] }) {
     return () => window.clearTimeout(t);
   }, [services]);
 
-  // Load slots whenever the selected day changes.
-  /* eslint-disable react-hooks/set-state-in-effect -- intentional fetch-on-change loading state */
+  // Synchronize the selection with an asynchronously refreshed availability snapshot.
+  /* eslint-disable react-hooks/set-state-in-effect -- external availability update invalidates selections and completes quick-book handoff */
+  // A selected time remains valid only while the latest successful read contains it.
   useEffect(() => {
-    if (!service || !date) {
-      setSlots([]);
-      return;
+    if (!day.data) return;
+    setSlot(previous => previous && day.data!.slots.some(time => time.start === previous.start) ? previous : null);
+    const pending = pendingStartRef.current;
+    if (pending) {
+      pendingStartRef.current = null;
+      const match = day.data.slots.find(time => time.start === pending);
+      if (match) { setSlot(match); setStep("details"); }
     }
-    let cancelled = false;
-    setLoadingSlots(true);
-    setSlot(null);
-    fetch(`/api/availability?serviceId=${service.id}&date=${date}`, {
-      cache: "no-store",
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        const loaded: Slot[] = data.slots ?? [];
-        setSlots(loaded);
-        // Quick-book hand-off: pre-select the teased time and go straight to
-        // the details form. If someone just grabbed it, stay on the times.
-        const pending = pendingStartRef.current;
-        if (pending) {
-          pendingStartRef.current = null;
-          const match = loaded.find((s) => s.start === pending);
-          if (match) {
-            setSlot(match);
-            setStep("details");
-          }
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setSlots([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingSlots(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [service, date]);
-
-  // Live refresh of the visible day: bookings and cancellations by others
-  // appear without a manual reload — silently on focus/foreground and every
-  // 45s. A selected slot survives as long as it is still free.
-  useEffect(() => {
-    if (!service || !date || step !== "datetime") return;
-    let cancelled = false;
-    async function refetch() {
-      try {
-        const data = await fetch(
-          `/api/availability?serviceId=${service!.id}&date=${date}`,
-          { cache: "no-store" },
-        ).then((r) => r.json());
-        if (cancelled) return;
-        const loaded: Slot[] = data.slots ?? [];
-        setSlots(loaded);
-        setSlot((prev) =>
-          prev && loaded.some((s) => s.start === prev.start) ? prev : null,
-        );
-      } catch {
-        /* keep the last known slots */
-      }
-    }
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void refetch();
-    };
-    const id = window.setInterval(onVisible, 45_000);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
-  }, [service, date, step]);
+  }, [day.data]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function chooseService(s: Service) {
+    setError(null);
+    pendingStartRef.current = null;
     setService(s);
     setDate(null);
-    setSlots([]);
     setSlot(null);
     setStep("datetime");
   }
@@ -278,7 +234,6 @@ export default function BookingFlow({ services }: { services: Service[] }) {
     setStep("service");
     setService(null);
     setDate(null);
-    setSlots([]);
     setSlot(null);
     // Keep name/email — booking another appointment right away shouldn't
     // require retyping them.
@@ -308,14 +263,9 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       if (!res.ok) {
         setError(data.error ?? "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
         if (res.status === 409 && date && service) {
-          const r = await fetch(
-            `/api/availability?serviceId=${service.id}&date=${date}`,
-            { cache: "no-store" },
-          );
-          const d = await r.json();
-          setSlots(d.slots ?? []);
           setSlot(null);
           setStep("datetime");
+          day.refresh();
         }
         return;
       }
@@ -324,6 +274,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       } catch {
         // Storage unavailable (private mode) — skip remembering.
       }
+      monthCache.clear();
       setResult(data as BookingResult);
       setStep("done");
       // Peak motivation for installing the app: the customer now has an
@@ -339,9 +290,9 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   // --- Step: choose service ---
   if (step === "service") {
     return (
-      <div className="mx-auto w-full max-w-lg">
+      <div ref={stepRootRef} tabIndex={-1} className="mx-auto w-full max-w-lg scroll-mt-24 outline-none">
         <Steps current="service" />
-        <div key="service" className="animate-fade-up">
+        <div key="service" className="animate-step-in">
           <h2 className="font-display text-3xl font-bold tracking-tight">
             Services
           </h2>
@@ -353,8 +304,8 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                 <li
                   key={s.id}
                   className={`card-lift group flex cursor-pointer items-center overflow-hidden rounded-2xl bg-background shadow-soft ring-1 ring-line transition-shadow ${t.hover} hover:ring-2`}
-                  onClick={() => chooseService(s)}
                 >
+                  <button type="button" onClick={() => chooseService(s)} className="flex w-full items-center text-left focus-visible:outline-2 focus-visible:outline-brand">
                   <span
                     className={`h-full w-2 self-stretch ${t.bar}`}
                     aria-hidden
@@ -397,6 +348,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
                       </span>
                     </span>
                   </div>
+                  </button>
                 </li>
               );
             })}
@@ -416,7 +368,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
   const theme = themeFor(serviceIndex);
 
   return (
-    <div className="mx-auto w-full max-w-2xl">
+    <div ref={stepRootRef} tabIndex={-1} className="mx-auto w-full max-w-2xl scroll-mt-24 outline-none">
       <Steps current={step} />
       {service && (
         <div className="flex items-center gap-4">
@@ -438,18 +390,20 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       )}
 
       {step === "datetime" && service && (
-        <div key="datetime" className="mt-6 animate-fade-up">
+        <div key="datetime" className="mt-6 animate-step-in">
           <Calendar
             serviceId={service.id}
             value={date}
-            onChange={setDate}
+            onChange={(nextDate) => { setSlot(null); setDate(nextDate); setError(null); }}
             accent={theme.solid}
           />
 
           {date && (
             <div className="mt-6 rounded-2xl bg-background p-5 shadow-sm ring-1 ring-line">
               <h3 className="text-sm font-semibold text-muted">Uhrzeit wählen</h3>
-              {loadingSlots ? (
+              {day.error ? (
+                <div className="mt-3" role="alert"><p className="text-sm text-amber-800">Termine konnten nicht aktualisiert werden. Bitte erneut laden.</p><button type="button" onClick={() => day.refresh()} className="mt-2 text-sm font-semibold underline">Erneut versuchen</button></div>
+              ) : loadingSlots ? (
                 <p className="mt-3 text-sm text-muted">Lädt Zeiten…</p>
               ) : slots.length === 0 ? (
                 <>
@@ -482,13 +436,14 @@ export default function BookingFlow({ services }: { services: Service[] }) {
           )}
 
           <button
-            disabled={!slot}
+            disabled={!slot || Boolean(day.error) || !slots.some(time => time.start === slot.start)}
             onClick={() => setStep("details")}
             className="mt-6 w-full rounded-full bg-foreground py-3.5 text-sm font-semibold text-background transition-opacity disabled:bg-zinc-400"
           >
             Weiter
           </button>
 
+          {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
           <GeneralWaitlistBox
             serviceId={service.id}
             defaultName={name}
@@ -498,7 +453,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       )}
 
       {step === "details" && service && slot && (
-        <form key="details" onSubmit={submit} className="mt-6 flex animate-fade-up flex-col gap-4">
+        <form key="details" onSubmit={submit} className="mt-6 flex animate-step-in flex-col gap-4">
           <Field
             label="E-Mail *"
             type="email"
@@ -561,7 +516,7 @@ export default function BookingFlow({ services }: { services: Service[] }) {
       )}
 
       {step === "done" && result && (
-        <div key="done" className="mt-2 animate-fade-up text-center">
+        <div key="done" className="mt-2 animate-step-in text-center">
           <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
             <span
               aria-hidden
@@ -712,7 +667,7 @@ function SecondSlotOffer({
     fetch(`/api/availability?serviceId=${service.id}&date=${dateStr}`, {
       cache: "no-store",
     })
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error("Termine konnten nicht geladen werden."); return r.json(); })
       .then((d) => {
         if (cancelled) return;
         const follow = (d.slots ?? []).find(
@@ -884,7 +839,7 @@ function FollowUpOffer({
       `/api/availability/month?serviceId=${service.id}&year=${y}&month=${m - 1}`,
       { cache: "no-store" },
     )
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error("Termine konnten nicht geladen werden."); return r.json(); })
       .then((d) => {
         if (cancelled) return;
         const open: number[] = d.days ?? [];
@@ -903,7 +858,7 @@ function FollowUpOffer({
           `/api/availability?serviceId=${service.id}&date=${best}`,
           { cache: "no-store" },
         )
-          .then((r) => r.json())
+          .then((r) => { if (!r.ok) throw new Error("Termine konnten nicht geladen werden."); return r.json(); })
           .then((a) => {
             if (cancelled) return;
             const free: Slot[] = a.slots ?? [];
@@ -1385,54 +1340,55 @@ export function Calendar({
   onChange: (date: string) => void;
   accent: string;
 }) {
-  const initial = useMemo(() => {
-    const today = todayInTz(tz);
-    const [y, m] = today.split("-").map(Number);
+  const current = useMemo(() => {
+    const [y, m] = todayInTz(tz).split("-").map(Number);
     return { year: y, month0: m - 1 };
   }, []);
-  const [year, setYear] = useState(initial.year);
-  const [month0, setMonth0] = useState(initial.month0);
-  const seed = monthCache.get(monthKey(serviceId, initial.year, initial.month0));
-  const [available, setAvailable] = useState<Set<number>>(
-    () => new Set(seed?.days ?? []),
-  );
-  const [full, setFull] = useState<Set<number>>(() => new Set(seed?.full ?? []));
-  const [loading, setLoading] = useState(!seed);
+  const [year, setYear] = useState(() => value ? Number(value.slice(0, 4)) : current.year);
+  const [month0, setMonth0] = useState(() => value ? Number(value.slice(5, 7)) - 1 : current.month0);
+  const key = monthKey(serviceId, year, month0);
+  const [view, setView] = useState<{ key: string; data: MonthData } | null>(null);
+  const [status, setStatus] = useState<{ key: string; loading: boolean; error: boolean }>({ key: "", loading: true, error: false });
+  const [retry, setRetry] = useState(0);
+  const visibleData = view?.key === key ? view.data : null;
+  const available = new Set(visibleData?.days ?? []);
+  const full = new Set(visibleData?.full ?? []);
+  const loading = status.key !== key || status.loading;
+  const calendarError = status.key === key && status.error;
+  const isCurrentView = year === current.year && month0 === current.month0;
 
-  const isCurrentView =
-    year === initial.year && month0 === initial.month0;
-
+  /* eslint-disable react-hooks/set-state-in-effect -- hydrate month-keyed external cache before revalidating */
   useEffect(() => {
     let cancelled = false;
-    const cached = monthCache.get(monthKey(serviceId, year, month0));
-    if (cached) {
-      // Show the cached month instantly; revalidate silently below.
-      setAvailable(new Set(cached.days));
-      setFull(new Set(cached.full));
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
-    fetchMonth(serviceId, year, month0)
-      .then((d) => {
-        if (!cancelled) {
-          setAvailable(new Set(d.days));
-          setFull(new Set(d.full));
-        }
-      })
-      .catch(() => {
-        if (!cancelled && !cached) {
-          setAvailable(new Set());
-          setFull(new Set());
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+    let generation = 0;
+    const cached = monthCache.get(key);
+    if (cached) setView({ key, data: cached });
+    const load = () => {
+      const version = ++generation;
+      setStatus({ key, loading: !monthCache.has(key), error: false });
+      fetchMonth(serviceId, year, month0).then(data => {
+        if (cancelled || generation !== version) return;
+        setView({ key, data });
+        setStatus({ key, loading: false, error: false });
+        const next = month0 === 11 ? { year: year + 1, month: 0 } : { year, month: month0 + 1 };
+        void fetchMonth(serviceId, next.year, next.month).catch(() => {});
+      }).catch(() => {
+        if (!cancelled && generation === version) setStatus({ key, loading: false, error: true });
       });
+    };
+    const visible = () => { if (document.visibilityState === "visible") load(); };
+    load();
+    window.addEventListener("focus", visible);
+    window.addEventListener("online", visible);
+    document.addEventListener("visibilitychange", visible);
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", visible);
+      window.removeEventListener("online", visible);
+      document.removeEventListener("visibilitychange", visible);
     };
-  }, [serviceId, year, month0]);
+  }, [serviceId, year, month0, key, retry]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function shiftMonth(delta: number) {
     let m = month0 + delta;
@@ -1493,7 +1449,7 @@ export function Calendar({
           return (
             <button
               key={dateStr}
-              disabled={!enabled && !isFull}
+              disabled={loading || calendarError || (!enabled && !isFull)}
               onClick={() => onChange(dateStr)}
               title={isFull && !enabled ? "Ausgebucht – Warteliste möglich" : undefined}
               className={`relative aspect-square rounded-lg text-sm transition-colors ${
@@ -1520,9 +1476,10 @@ export function Calendar({
         })}
       </div>
 
-      <div className="mt-4 space-y-2 border-t border-line pt-3 text-center text-sm text-muted">
+      <div className="mt-4 space-y-2 border-t border-line pt-3 text-center text-sm text-muted" aria-live="polite">
+        {calendarError && <p role="alert" className="text-amber-800">Kalender konnte nicht geladen werden. <button type="button" onClick={() => setRetry(n => n + 1)} className="font-semibold underline">Erneut versuchen</button></p>}
         <p>
-          {loading
+          {calendarError ? "Bitte lade den Kalender erneut." : loading
             ? "Lädt…"
             : value
               ? "Wähle eine Uhrzeit."
