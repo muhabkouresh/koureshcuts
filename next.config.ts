@@ -32,6 +32,8 @@ const csp = [
 // (clickjacking), the Permissions-Policy switches off unused device APIs, and
 // the CSP restricts every resource to same-origin.
 const securityHeaders = [
+  // Keep direct links and the installed app usable while opting out of search indexing.
+  { key: "X-Robots-Tag", value: "noindex, nofollow" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },

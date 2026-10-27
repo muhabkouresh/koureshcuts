@@ -23,6 +23,12 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
+  verification: { google: "rfGALD24NTQWX5oamNGG4wM-PkftMPw2ZtD5Gz4V_3I" },
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false, noimageindex: true },
+  },
   title: {
     default: `${siteConfig.name} — Termin online buchen`,
     template: `%s · ${siteConfig.name}`,
